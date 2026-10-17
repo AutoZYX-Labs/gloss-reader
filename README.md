@@ -28,7 +28,7 @@ You need Node.js 18 or newer.
 /plugin install gloss-reader@gloss-reader
 ```
 
-Then run `/gloss-reader:gloss thesis.pdf` (or just `/gloss thesis.pdf`), or ask "open thesis.pdf in Gloss Reader".
+Then type `/gloss`. The reader opens in your browser, where you drop or choose a PDF. To open a specific file straight away, use `/gloss thesis.pdf` (the full name is `/gloss-reader:gloss`).
 
 **Codex** (skill): copy the skill folder into your Codex skills directory:
 
@@ -38,13 +38,14 @@ mkdir -p ~/.agents/skills
 cp -r gloss-reader/plugins/gloss-reader/skills/gloss ~/.agents/skills/
 ```
 
-Then type `$gloss thesis.pdf` in Codex, or ask it to open the PDF in Gloss Reader. Codex's sandbox may ask you to approve starting the local server.
+Then type `$gloss` (or `$gloss thesis.pdf`) in Codex. Codex's sandbox may ask you to approve starting the local server.
 
 **Other agents with Agent Skills support** (Gemini CLI, Cursor and others): use the [skills CLI](https://skills.sh) (`npx skills add AutoZYX-Labs/gloss-reader`), or copy `plugins/gloss-reader/skills/gloss` into that agent's skills folder.
 
 **Without an agent driving it**, from any terminal:
 
 ```bash
+node plugins/gloss-reader/skills/gloss/server.mjs                 # empty reader, pick a PDF in the browser
 node plugins/gloss-reader/skills/gloss/server.mjs thesis.pdf --agent codex
 ```
 
@@ -62,8 +63,8 @@ node plugins/gloss-reader/skills/gloss/server.mjs thesis.pdf --agent codex
 
 | What | Where |
 |---|---|
-| Highlights and comments | `thesis.pdf.gloss.json`, next to the PDF. It's plain JSON, so you can keep it with the PDF or commit it. |
-| Annotated copy | `thesis (highlighted).pdf`, next to the PDF. Your original is never changed. |
+| Highlights and comments | Started with a file: `thesis.pdf.gloss.json`, next to the PDF. Opened in the browser: `~/.gloss-reader/annotations.json`. Both are plain JSON, matched to each PDF by its fingerprint, so reopening the same PDF brings them back. |
+| Annotated copy | Started with a file: `thesis (highlighted).pdf`, next to the PDF. Opened in the browser: a normal browser download. Your original is never changed. |
 
 ## Privacy
 

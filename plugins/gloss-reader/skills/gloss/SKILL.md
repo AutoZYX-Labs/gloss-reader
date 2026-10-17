@@ -1,7 +1,7 @@
 ---
 name: gloss
 description: Open a PDF (paper, thesis, dissertation, report) in Gloss Reader, a local browser reader with an AI side panel that explains selected text or the current page, with colour highlights, comments, and saving an annotated copy. Use when the user wants to read, study, annotate, or have a PDF explained side by side.
-argument-hint: <path/to/file.pdf> [--model NAME]
+argument-hint: "[path/to/file.pdf] [--model NAME]"
 allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/server.mjs" *), Bash(node ${CLAUDE_SKILL_DIR}/server.mjs *), Glob
 ---
 
@@ -19,7 +19,7 @@ The server script is `server.mjs` in the same folder as this SKILL.md. In Claude
 
 ## Steps
 
-1. **Find the PDF.** Use the path the user gave. Otherwise look for PDFs in the current directory (shallow first). If there is exactly one, use it; if there are several, ask which one; if none, ask for a path.
+1. **Which PDF, if any.** If the user named a PDF, use its absolute path. If they didn't (for example they just typed `/gloss`), don't search for one: start the reader without a file, and they will open a PDF in the browser page.
 
 2. **Start the reader.** Run this command in the foreground, without `nohup`, `&` or any other wrapper. It starts the server in the background itself, prints the link and returns within a few seconds:
 
@@ -27,14 +27,20 @@ The server script is `server.mjs` in the same folder as this SKILL.md. In Claude
    node "<skill folder>/server.mjs" "<absolute path to the pdf>" --detach --agent <you>
    ```
 
+   Without a PDF, leave the path out:
+
+   ```bash
+   node "<skill folder>/server.mjs" --detach --agent <you>
+   ```
+
    Set `--agent` to the agent you are: `claude` if you are Claude Code, `codex` if you are Codex, `gemini` if you are Gemini CLI. Add `--model <name>` only if the user asked for a specific model, and `--no-open` if they don't want the browser opened automatically. If your sandbox blocks network ports or background processes, ask the user to approve the command or to run it in their own terminal.
 
 3. **Report the link.** The output has a `URL:` line that includes an access token. Tell the user in two or three short lines:
-   - the URL (the browser should already have opened it),
-   - that highlights and comments are saved next to the PDF as `<file>.pdf.gloss.json`,
-   - that **Save PDF** writes `<file> (highlighted).pdf` next to the original (it never overwrites: an existing name gets a number added).
+   - the URL (the browser should already have opened it); if no PDF was given, that they can drop or choose a PDF on the page,
+   - where highlights and comments are saved: next to the PDF as `<file>.pdf.gloss.json`, or in `~/.gloss-reader/annotations.json` when the PDF was opened in the browser,
+   - that **Save PDF** writes `<file> (highlighted).pdf` next to the original (never overwriting), or downloads it through the browser when the PDF was opened in the browser.
 
-4. **Stopping.** The reader stops by itself after 4 hours without use. To stop it sooner, run the same command with `--stop` in place of `--detach`. Running `--detach` again for the same PDF replaces the old server.
+4. **Stopping.** The reader stops by itself after 4 hours without use. To stop it sooner, run the same command with `--stop` in place of `--detach`. Running `--detach` again for the same PDF (or again with no PDF) replaces the old server.
 
 ## What the reader does
 

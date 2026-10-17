@@ -94,6 +94,14 @@
   const downloads = {
     save: async ({ filename, data }) => {
       const body = data instanceof Blob ? data : new Blob([data]);
+      if (!cfg.pdfUrl) {
+        // The PDF was picked in the browser, so there is no folder to write next to: use a normal download.
+        const url = URL.createObjectURL(body);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+        return { status: "saved" };
+      }
       const r = await api("/api/save?name=" + encodeURIComponent(filename), { method: "POST", body });
       if (!r.ok) throw { code: "unavailable", message: "HTTP " + r.status };
       const j = await r.json();

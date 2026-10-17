@@ -2,8 +2,9 @@
 // Gloss Reader local server. Serves the reader for one PDF on 127.0.0.1 and answers questions
 // through a coding agent's own CLI (Claude Code, Codex or Gemini CLI). No dependencies.
 //
-//   node server.mjs <file.pdf> --detach [--agent claude|codex|gemini] [--model NAME] [--no-open]
-//   node server.mjs <file.pdf> --stop
+//   node server.mjs [file.pdf] --detach [--agent claude|codex|gemini] [--model NAME] [--no-open]
+//   node server.mjs [file.pdf] --stop
+// Without a file, the reader opens empty and the user picks a PDF in the browser.
 
 import http from "node:http";
 import fs from "node:fs";
@@ -22,23 +23,21 @@ const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 && arg
 const has = (name) => args.includes(name);
 const pdfArg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.includes(args[i - 1]));
 
-if (!pdfArg) {
-  console.error("Usage: node server.mjs <file.pdf> [--detach|--stop] [--agent claude|codex|gemini] [--model NAME] [--port N] [--no-open]");
-  process.exit(2);
-}
-const PDF = path.resolve(pdfArg);
-const NAME = path.basename(PDF);
-const RUN_ID = crypto.createHash("sha1").update(PDF).digest("hex").slice(0, 12);
+// With no PDF the reader opens empty and the user picks a file in the browser.
+const PDF = pdfArg ? path.resolve(pdfArg) : null;
+const NAME = PDF ? path.basename(PDF) : null;
+const LABEL = NAME || "the reader";
+const RUN_ID = crypto.createHash("sha1").update(PDF || "(no file)").digest("hex").slice(0, 12);
 const LOG = path.join(os.tmpdir(), `gloss-reader-${RUN_ID}.log`);
 const PIDFILE = path.join(os.tmpdir(), `gloss-reader-${RUN_ID}.pid`);
 
 // ---- --stop ----
 if (has("--stop")) {
-  try { process.kill(Number(fs.readFileSync(PIDFILE, "utf8")), "SIGTERM"); fs.rmSync(PIDFILE, { force: true }); console.log(`Stopped Gloss Reader for ${NAME}.`); }
-  catch { console.log(`No running Gloss Reader found for ${NAME}.`); }
+  try { process.kill(Number(fs.readFileSync(PIDFILE, "utf8")), "SIGTERM"); fs.rmSync(PIDFILE, { force: true }); console.log(`Stopped Gloss Reader for ${LABEL}.`); }
+  catch { console.log(`No running Gloss Reader found for ${LABEL}.`); }
   process.exit(0);
 }
-if (!fs.existsSync(PDF) || !fs.statSync(PDF).isFile()) { console.error(`Not found: ${PDF}`); process.exit(2); }
+if (PDF && (!fs.existsSync(PDF) || !fs.statSync(PDF).isFile())) { console.error(`Not found: ${PDF}`); process.exit(2); }
 
 // ---- Agents ----
 const AGENTS = {
@@ -77,7 +76,7 @@ if (has("--detach")) {
     const ready = out.includes("URL:");
     if (ready || /error|not found/i.test(out) || Date.now() - t0 > 15000) {
       console.log(out.trim());
-      if (ready) console.log(`Running in the background (stops after ${Number(flag("--idle-hours", "4"))} h idle). Stop it with: node "${SELF}" "${PDF}" --stop`);
+      if (ready) console.log(`Running in the background (stops after ${Number(flag("--idle-hours", "4"))} h idle). Stop it with: node "${SELF}"${PDF ? ` "${PDF}"` : ""} --stop`);
       process.exit(ready ? 0 : 1);
     }
     setTimeout(poll, 150);
@@ -93,13 +92,17 @@ function startServer() {
   const MODEL = flag("--model", process.env.GLOSS_MODEL || "");
   const PORT = Number(flag("--port", "0"));
   const IDLE_MS = Number(flag("--idle-hours", "4")) * 3600e3;
-  const SIDECAR = PDF + ".gloss.json";
+  // Annotations: next to the PDF when one is given, otherwise in one store in the home folder (keyed by PDF fingerprint).
+  const HOME_STORE = path.join(os.homedir(), ".gloss-reader");
+  const SIDECAR = PDF ? PDF + ".gloss.json" : path.join(HOME_STORE, "annotations.json");
+  if (!PDF) fs.mkdirSync(HOME_STORE, { recursive: true });
+  const SAVE_DIR = PDF ? path.dirname(PDF) : [path.join(os.homedir(), "Downloads"), os.homedir()].find((d) => fs.existsSync(d));
   const TOKEN = crypto.randomBytes(18).toString("base64url");
 
   const page = () => {
     const reader = fs.readFileSync(path.join(HERE, "app", "reader.html"), "utf8");
     const shim = fs.readFileSync(path.join(HERE, "app", "local-shim.js"), "utf8");
-    const cfg = JSON.stringify({ token: TOKEN, name: NAME, pdfUrl: "/doc.pdf?t=" + TOKEN, agentName: AGENTS[AGENT].label }).replace(/</g, "\\u003c");
+    const cfg = JSON.stringify({ token: TOKEN, name: NAME, pdfUrl: PDF ? "/doc.pdf?t=" + TOKEN : null, agentName: AGENTS[AGENT].label }).replace(/</g, "\\u003c");
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <script>window.GLOSS_LOCAL=${cfg};</script><script>${shim}</script></head><body>
@@ -245,7 +248,7 @@ ${reader}
       }
       if (!authed) return send(res, 403, "forbidden");
 
-      if (req.method === "GET" && url.pathname === "/doc.pdf") {
+      if (req.method === "GET" && url.pathname === "/doc.pdf" && PDF) {
         res.writeHead(200, { "Content-Type": "application/pdf", "Cache-Control": "no-store" });
         return fs.createReadStream(PDF).pipe(res);
       }
@@ -261,7 +264,7 @@ ${reader}
       }
       if (req.method === "POST" && url.pathname === "/api/save") {
         const want = path.basename(url.searchParams.get("name") || "highlighted.pdf").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
-        const out = freeName(path.dirname(PDF), want.toLowerCase().endsWith(".pdf") ? want : want + ".pdf");
+        const out = freeName(SAVE_DIR, want.toLowerCase().endsWith(".pdf") ? want : want + ".pdf");
         await fsp.writeFile(out, await readBody(req, 500e6));
         return send(res, 200, JSON.stringify({ path: out }), "application/json");
       }
@@ -276,7 +279,7 @@ ${reader}
   server.on("error", (e) => { console.error("Error: " + e.message); process.exit(1); });
   server.listen(PORT, "127.0.0.1", () => {
     const link = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
-    console.log(`Gloss Reader is open for ${NAME} (answers by ${AGENTS[AGENT].label})`);
+    console.log(NAME ? `Gloss Reader is open for ${NAME} (answers by ${AGENTS[AGENT].label})` : `Gloss Reader is open (answers by ${AGENTS[AGENT].label}). Open a PDF in the browser page.`);
     console.log(`URL: ${link}`);
     console.log(`Highlights and comments are saved to ${SIDECAR}`);
     if (!has("--no-open")) {
