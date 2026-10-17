@@ -24,7 +24,7 @@ You need Node.js 18 or newer.
 **Claude Code** (plugin):
 
 ```text
-/plugin marketplace add <github-user>/gloss-reader
+/plugin marketplace add AutoZYX-Labs/gloss-reader
 /plugin install gloss-reader@gloss-reader
 ```
 
@@ -33,14 +33,14 @@ Then run `/gloss-reader:gloss thesis.pdf` (or just `/gloss thesis.pdf`), or ask 
 **Codex** (skill): copy the skill folder into your Codex skills directory:
 
 ```bash
-git clone https://github.com/<github-user>/gloss-reader
+git clone https://github.com/AutoZYX-Labs/gloss-reader
 mkdir -p ~/.agents/skills
 cp -r gloss-reader/plugins/gloss-reader/skills/gloss ~/.agents/skills/
 ```
 
 Then type `$gloss thesis.pdf` in Codex, or ask it to open the PDF in Gloss Reader. Codex's sandbox may ask you to approve starting the local server.
 
-**Other agents with Agent Skills support** (Gemini CLI, Cursor and others): use the [skills CLI](https://skills.sh) (`npx skills add <github-user>/gloss-reader`), or copy `plugins/gloss-reader/skills/gloss` into that agent's skills folder.
+**Other agents with Agent Skills support** (Gemini CLI, Cursor and others): use the [skills CLI](https://skills.sh) (`npx skills add AutoZYX-Labs/gloss-reader`), or copy `plugins/gloss-reader/skills/gloss` into that agent's skills folder.
 
 **Without an agent driving it**, from any terminal:
 
