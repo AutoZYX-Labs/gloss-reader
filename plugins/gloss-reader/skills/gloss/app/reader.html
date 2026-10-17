@@ -1,4 +1,4 @@
-<title>Margin Reader</title>
+<title>Gloss Reader</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
@@ -173,7 +173,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 <div class="app">
   <header class="bar">
-    <div class="brand"><i aria-hidden="true"></i>Margin Reader</div>
+    <div class="brand"><i aria-hidden="true"></i>Gloss Reader</div>
     <div class="docname" id="docname">No document open</div>
     <div class="ctrls">
       <div class="pager" id="pager" hidden>
@@ -194,7 +194,7 @@ button,input,select,textarea{font:inherit;color:inherit}
           <h2>Open a paper or dissertation</h2>
           <p>Drop a PDF here or choose one. Select any sentence or paragraph to have it explained, or ask about the page you are on.</p>
           <button class="btn primary" id="openBtn2">Choose PDF</button>
-          <p class="fine">The PDF stays in your browser. Only the text you ask about is sent to Claude.</p>
+          <p class="fine">The PDF stays in your browser. Only the text you ask about is sent to <span data-agent>Claude</span>.</p>
         </div>
       </div>
       <div class="pages" id="pages" hidden></div>
@@ -229,7 +229,7 @@ button,input,select,textarea{font:inherit;color:inherit}
     <aside class="panel" aria-label="Claude">
       <div class="ptop">
         <div class="tabs" role="tablist">
-          <button role="tab" id="tabChat" aria-selected="true">Claude</button>
+          <button role="tab" id="tabChat" aria-selected="true"><span data-agent>Claude</span></button>
           <button role="tab" id="tabHl" aria-selected="false">Highlights<span class="n" id="hlCount">0</span></button>
         </div>
         <div class="seg" id="levelSeg" role="group" aria-label="Explanation level" title="Explain for">
@@ -248,7 +248,7 @@ button,input,select,textarea{font:inherit;color:inherit}
           <div class="quote"><mark>Direct intervention makes Δe the simulator-defined effect of removal, but the qualification analysis shows that it is difficult to recover from the compact pre-action observation.</mark></div>
         </div>
         <div class="msg example">
-          <div class="who">Claude</div>
+          <div class="who"><span data-agent>Claude</span></div>
           <div class="answer"><p><strong>In short:</strong> Δe is the true effect of removing an object, but a model can't reliably predict it from what the robot sees beforehand.</p><p>Because the simulator actually removes each object and measures the change, Δe is causally correct by construction. The catch is learnability: the compact observation available <em>before</em> acting doesn't carry enough information to estimate it well.</p></div>
         </div>
       </div>
@@ -281,6 +281,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
+  // Which assistant answers: Claude on claude.ai; in local mode the server names the agent (Claude, Codex, Gemini).
+  const AGENT = String((window.GLOSS_LOCAL && window.GLOSS_LOCAL.agentName) || "Claude");
+  document.querySelectorAll("[data-agent]").forEach((el) => { el.textContent = AGENT; });
+  document.querySelector(".panel")?.setAttribute("aria-label", AGENT);
+  document.getElementById("ask")?.setAttribute("aria-label", "Ask " + AGENT);
   const viewer = $("viewer"), pagesEl = $("pages"), thread = $("thread");
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -310,7 +315,7 @@ button,input,select,textarea{font:inherit;color:inherit}
   const store = {
     db: null, uid: null,
     col() { return this.db.collection("data/users/" + this.uid); },
-    lsKey: (f) => "margin-reader:hl:" + f,
+    lsKey: (f) => "gloss-reader:hl:" + f,
     lsRead(f) { try { return JSON.parse(localStorage.getItem(this.lsKey(f)) || "[]"); } catch { return []; } },
     lsWrite(f, list) { try { localStorage.setItem(this.lsKey(f), JSON.stringify(list)); } catch {} },
     async load(f) {
@@ -835,10 +840,10 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
         rate_limited: "Too many requests right now. Wait a moment, then try again.",
         session_expired: "Your session expired. Sign in again, then retry.",
         prompt_too_large: "That's too much text at once. Select a shorter passage.",
-        refused: "Claude declined to answer this one. Try rephrasing.",
+        refused: `${AGENT} declined to answer this one. Try rephrasing.`,
         images_unavailable: "Page images aren't available here. Try again; text only will be used.",
         image_rejected: "The page image couldn't be sent. Try again.",
-      }[code] || "Something went wrong reaching Claude. Try again.";
+      }[code] || (e?.message && window.GLOSS_LOCAL ? `${AGENT}: ${e.message}` : `Something went wrong reaching ${AGENT}. Try again.`);
       noteEl.textContent = msg; noteEl.classList.toggle("err", code !== "cancelled");
       if (code === "images_unavailable") canImages = false;
       if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(code)) { sample = null; $("unavail").hidden = false; $("askRow").hidden = true; }
@@ -860,7 +865,7 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
   }
   function addAssistant() {
     const m = document.createElement("div"); m.className = "msg";
-    m.innerHTML = `<div class="who">Claude</div><div class="thinking">Reading…</div><div class="answer"></div><div class="note"></div>`;
+    m.innerHTML = `<div class="who">${esc(AGENT)}</div><div class="thinking">Reading…</div><div class="answer"></div><div class="note"></div>`;
     thread.appendChild(m); scrollThread();
     const answerEl = m.querySelector(".answer"), noteEl = m.querySelector(".note"), th = m.querySelector(".thinking");
     const obs = new MutationObserver(() => { if (answerEl.innerHTML) { th.remove(); obs.disconnect(); } });
@@ -904,7 +909,7 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
       const annot = ctx.obj({
         Type: "Annot", Subtype: "Highlight", Rect: rect, QuadPoints: quads, C: [cr, cg, cb], F: 4,
         AP: { N: ap }, P: page.ref,
-        T: PDFHexString.fromText("Margin Reader"),
+        T: PDFHexString.fromText("Gloss Reader"),
         M: PDFString.fromDate(new Date(h.created || Date.now())),
         NM: PDFHexString.fromText(h.id),
       });
@@ -940,9 +945,9 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
     } finally { btn.disabled = false; btn.textContent = "Save PDF"; }
   };
 
-  // Local mode (Claude Code plugin): the server names the PDF to open on load.
-  if (window.MARGIN_LOCAL && window.MARGIN_LOCAL.pdfUrl) {
-    fetch(window.MARGIN_LOCAL.pdfUrl).then((r) => (r.ok ? r.blob() : Promise.reject())).then((b) => loadFile(new File([b], window.MARGIN_LOCAL.name || "document.pdf", { type: "application/pdf" }))).catch(() => addNote("Couldn't load the PDF from the local server.", true));
+  // Local mode (agent skill): the server names the PDF to open on load.
+  if (window.GLOSS_LOCAL && window.GLOSS_LOCAL.pdfUrl) {
+    fetch(window.GLOSS_LOCAL.pdfUrl).then((r) => (r.ok ? r.blob() : Promise.reject())).then((b) => loadFile(new File([b], window.GLOSS_LOCAL.name || "document.pdf", { type: "application/pdf" }))).catch(() => addNote("Couldn't load the PDF from the local server.", true));
   }
   function addNote(t, err) {
     const n = document.createElement("div"); n.className = "note" + (err ? " err" : ""); n.textContent = t; thread.appendChild(n); scrollThread();

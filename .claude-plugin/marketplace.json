@@ -1,17 +1,17 @@
 {
-  "name": "margin-reader",
+  "name": "gloss-reader",
   "owner": {
     "name": "Cheng Wang"
   },
   "metadata": {
-    "description": "Margin Reader: a PDF reader with Claude in the side panel.",
-    "version": "0.1.0"
+    "description": "Gloss Reader: read PDFs with an AI side panel that explains, highlights and comments.",
+    "version": "0.2.0"
   },
   "plugins": [
     {
-      "name": "margin-reader",
-      "source": "./plugins/margin-reader",
-      "description": "Read PDFs with Claude in a side panel: explain selections or pages, highlight, comment, and save an annotated copy."
+      "name": "gloss-reader",
+      "source": "./plugins/gloss-reader",
+      "description": "Read PDFs with an AI side panel: explain selections or pages, highlight, comment, and save an annotated copy. Works with Claude Code, Codex and Gemini CLI."
     }
   ]
 }

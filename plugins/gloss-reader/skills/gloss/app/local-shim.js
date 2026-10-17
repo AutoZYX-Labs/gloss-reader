@@ -1,9 +1,9 @@
-// Margin Reader local mode: provides the small `window.claude` surface the reader page uses,
+// Gloss Reader local mode: provides the small `window.claude` surface the reader page uses,
 // backed by the local server started by the Claude Code skill. No other pages can call it:
 // every API request carries the per-run token the server injected.
 (() => {
-  const cfg = window.MARGIN_LOCAL || {};
-  const H = { "X-Margin-Token": cfg.token || "" };
+  const cfg = window.GLOSS_LOCAL || {};
+  const H = { "X-Gloss-Token": cfg.token || "" };
   const api = (path, init = {}) => fetch(path, { ...init, headers: { ...(init.headers || {}), ...H } });
 
   // ---- sample: ask Claude through `claude -p` on this machine ----

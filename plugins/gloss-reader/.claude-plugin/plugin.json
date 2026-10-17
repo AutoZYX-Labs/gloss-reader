@@ -1,0 +1,7 @@
+{
+  "name": "gloss-reader",
+  "version": "0.2.0",
+  "description": "Read PDFs with an AI side panel: explain selections or pages, highlight, comment, and save an annotated copy. Works with Claude Code, Codex and Gemini CLI.",
+  "author": { "name": "Cheng Wang" },
+  "license": "MIT"
+}
