@@ -1,0 +1,951 @@
+<title>Margin Reader</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: split reader. Document on the left, a margin of explanations on the right, highlighter yellow ties them together. */
+:root{
+  --bg:#e9ecf1; --surface:#ffffff; --surface-2:#f4f6f9; --fg:#18202e; --muted:#5b6575; --line:#d3d8e0;
+  --accent:#2b49c9; --accent-fg:#ffffff; --hl:#ffd84d; --hl-soft:rgba(255,216,77,.42); --hl-ink:#2e2600;
+  --danger:#b3261e; --shadow:0 1px 2px rgba(20,30,50,.08),0 4px 18px rgba(20,30,50,.10);
+  --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-read:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101319; --surface:#181d25; --surface-2:#1f2530; --fg:#e5e9f0; --muted:#97a0af; --line:#2b323e;
+  --accent:#8ea4ff; --accent-fg:#0d1330; --hl:#e8c33a; --hl-soft:rgba(232,195,58,.38); --hl-ink:#1f1900;
+  --danger:#ff8a80; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#101319; --surface:#181d25; --surface-2:#1f2530; --fg:#e5e9f0; --muted:#97a0af; --line:#2b323e;
+  --accent:#8ea4ff; --accent-fg:#0d1330; --hl:#e8c33a; --hl-soft:rgba(232,195,58,.38); --hl-ink:#1f1900;
+  --danger:#ff8a80; --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35); color-scheme:dark}
+
+html,body{height:100%}
+body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:14px;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);border-bottom:1px solid var(--line);
+  padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{font-family:var(--f-read);font-weight:600;font-size:17px;letter-spacing:-.01em;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.brand i{display:inline-block;width:14px;height:14px;background:var(--hl);border-radius:3px;transform:rotate(-8deg)}
+.docname{color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 120px}
+.ctrls{display:flex;align-items:center;gap:6px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:6px 11px;cursor:pointer;line-height:1.2;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--surface-2)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08);background:var(--accent)}
+.btn.icon{padding:6px 9px;font-family:var(--f-mono)}
+.pager{display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.pager input{width:52px;text-align:right;padding:5px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2);font-family:var(--f-mono)}
+
+.main{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 6px var(--panel-w,420px);grid-template-rows:minmax(0,1fr)}
+.viewer{position:relative;overflow:auto;min-width:0;background:var(--bg)}
+.pages{display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px 12px 40px}
+.page{position:relative;background:#fff;box-shadow:var(--shadow);flex:none}
+.page canvas{display:block;width:100%;height:100%}
+.page .pno{position:absolute;right:-2px;top:-15px;font-family:var(--f-mono);font-size:10.5px;color:var(--muted)}
+
+/* pdf.js 3.11 text layer */
+.textLayer{position:absolute;text-align:initial;inset:0;overflow:hidden;line-height:1;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:2}
+.textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0% 0%}
+.textLayer span.markedContent{top:0;height:0}
+.textLayer ::selection{background:var(--hl-soft);color:transparent}
+.textLayer br::selection{background:transparent}
+.textLayer .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:-1;cursor:default;user-select:none}
+.textLayer .endOfContent.active{top:0}
+
+.selbar{position:absolute;z-index:20;display:flex;gap:4px;padding:4px;background:var(--fg);border-radius:9px;box-shadow:var(--shadow)}
+.selbar button{border:0;background:transparent;color:var(--bg);padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:500}
+.selbar button:hover{background:rgba(127,127,127,.28)}
+.selbar button.hl{background:var(--hl);color:var(--hl-ink)}
+.selbar .sep,.hlpop .sep{width:1px;background:rgba(127,127,127,.4);margin:4px 2px}
+.selbar button.sw,.hlpop button.sw{width:28px;padding:0;display:grid;place-items:center}
+.sw i{display:block;width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18)}
+.sw[aria-pressed="true"] i{box-shadow:0 0 0 2px var(--fg),0 0 0 3.5px var(--c)}
+.hlpop{position:absolute;z-index:21;display:flex;gap:4px;padding:4px;background:var(--fg);border-radius:9px;box-shadow:var(--shadow)}
+.hlpop button{border:0;background:transparent;color:var(--bg);padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:500}
+.hlpop button:hover{background:rgba(127,127,127,.28)}
+/* Highlights sit between the page image and the selectable text. Their colors stay fixed because PDF pages are always white. */
+.hlLayer{position:absolute;inset:0;z-index:1;pointer-events:none;mix-blend-mode:multiply}
+.hlLayer div{position:absolute;border-radius:2px}
+.hlLayer div.active{outline:2px solid var(--accent);outline-offset:1px}
+
+.empty{min-height:100%;display:grid;place-items:center;padding:24px}
+.drop{max-width:440px;width:100%;border:1.5px dashed var(--line);border-radius:14px;background:var(--surface);padding:36px 28px;text-align:center;display:grid;gap:14px;justify-items:center}
+.drop.over{border-color:var(--accent);background:var(--surface-2)}
+.drop h2{margin:0;font-family:var(--f-read);font-weight:600;font-size:22px;text-wrap:balance}
+.drop p{margin:0;color:var(--muted);line-height:1.55;max-width:36ch}
+.drop .fine{font-size:12.5px}
+
+.split{cursor:col-resize;background:var(--line);opacity:.6}
+.split:hover,.split.drag{background:var(--accent);opacity:1}
+
+.panel{min-height:0;min-width:0;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--line)}
+.ptop,.composer{flex:none}
+.tabs{display:flex;margin-right:auto}
+.tabs button{border:0;background:none;padding:5px 2px;margin-right:14px;cursor:pointer;font-weight:500;color:var(--muted);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--hl)}
+.tabs .n{font-family:var(--f-mono);font-size:11.5px;color:var(--muted);margin-left:5px}
+.hlview{flex:1;min-height:0;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:6px}
+.hlhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.hlhead .note{margin-right:auto}
+.hlitem{display:grid;grid-template-columns:12px minmax(0,1fr);gap:4px 10px;text-align:left;border:1px solid transparent;background:none;border-radius:8px;padding:8px;cursor:pointer;width:100%}
+.hlitem:hover{background:var(--surface-2);border-color:var(--line)}
+.hlitem .dot{width:12px;height:12px;border-radius:50%;background:var(--c);margin-top:3px}
+.hlitem .pg{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.hlitem .tx{grid-column:2;font-family:var(--f-read);font-size:14.5px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hlempty{color:var(--muted);line-height:1.55;padding:20px 4px;margin:0;max-width:38ch}
+.filters{display:flex;gap:4px}
+.filters button{border:1px solid var(--line);background:var(--surface);border-radius:999px;width:24px;height:24px;padding:0;display:grid;place-items:center;cursor:pointer}
+.filters button i{width:12px;height:12px;border-radius:50%;background:var(--c)}
+.filters button[aria-pressed="true"]{border-color:var(--fg);border-width:2px}
+.ptop{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.ptop .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-right:auto}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:5px 10px;cursor:pointer;font-size:12.5px;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface-2);color:var(--fg);font-weight:600}
+.actions{display:flex;gap:8px;width:100%}
+.actions .btn{flex:1}
+
+.thread{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:18px;min-height:0}
+.msg{display:grid;gap:6px;min-width:0}
+.msg .who{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);display:flex;gap:8px;align-items:center}
+.msg .who .pg{font-family:var(--f-mono);text-transform:none;letter-spacing:0}
+.msg.user .body{font-weight:500;line-height:1.5}
+.quote{font-family:var(--f-read);font-size:14.5px;line-height:1.6;max-height:7.5em;overflow:hidden;position:relative}
+.quote mark{background:var(--hl-soft);color:inherit;padding:1px 0;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.quote.long::after{content:"";position:absolute;inset:auto 0 0;height:2em;background:linear-gradient(transparent,var(--surface))}
+.answer{font-family:var(--f-read);font-size:15.5px;line-height:1.62;min-width:0;overflow-wrap:anywhere}
+.answer>:first-child{margin-top:0}.answer>:last-child{margin-bottom:0}
+.answer p,.answer ul,.answer ol{margin:0 0 .7em}
+.answer ul,.answer ol{padding-left:1.25em}
+.answer li{margin:.2em 0}
+.answer h1,.answer h2,.answer h3,.answer h4{font-family:var(--f-ui);font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:1.1em 0 .4em}
+.answer code{font-family:var(--f-mono);font-size:.86em;background:var(--surface-2);padding:1px 4px;border-radius:4px}
+.answer pre{background:var(--surface-2);padding:10px;border-radius:8px;overflow-x:auto}
+.answer pre code{background:none;padding:0}
+.answer strong{font-weight:600}
+.answer blockquote{margin:0 0 .7em;padding-left:12px;border-left:2px solid var(--line);color:var(--muted)}
+.answer table{border-collapse:collapse;display:block;overflow-x:auto;font-family:var(--f-ui);font-size:13px}
+.answer td,.answer th{border:1px solid var(--line);padding:4px 8px}
+.thinking{color:var(--muted);font-family:var(--f-ui);font-size:13px;display:flex;gap:8px;align-items:center}
+.thinking::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--hl);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25;transform:scale(.7)}}
+@media (prefers-reduced-motion:reduce){.thinking::before{animation:none}}
+.note{font-size:12.5px;color:var(--muted)}
+.note.err{color:var(--danger)}
+.example-tag{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted);align-self:start;justify-self:start}
+
+.composer{border-top:1px solid var(--line);padding:10px 12px;display:grid;gap:8px;padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
+.ctx{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;min-width:0}
+.ctx span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctx button{border:0;background:none;color:var(--accent);cursor:pointer;padding:0 2px;font-size:12px}
+.row{display:flex;gap:8px;align-items:flex-end}
+.row textarea{flex:1;min-width:0;resize:none;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:8px 10px;line-height:1.4;max-height:140px}
+.cmLayer{position:absolute;inset:0;z-index:3;pointer-events:none}
+.cmark{position:absolute;right:6px;width:22px;height:20px;transform:translateY(-2px);pointer-events:auto;cursor:pointer;border:1.5px solid rgba(0,0,0,.35);border-radius:6px 6px 6px 1px;background:var(--c);display:grid;place-items:center;padding:0;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.cmark svg{width:12px;height:12px;stroke:#2a2a2a;fill:none;stroke-width:2}
+.cbox{position:absolute;z-index:22;width:min(320px,calc(100% - 16px));background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);padding:10px;display:grid;gap:8px}
+.cbox .cq{font-family:var(--f-read);font-size:13px;line-height:1.45;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;border-left:3px solid var(--c);padding-left:8px}
+.cbox textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:70px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);padding:8px;line-height:1.45}
+.cbox .cbtns{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cbox .cbtns .grow{flex:1}
+.cbox .hint{font-size:11.5px;color:var(--muted)}
+.hlitem .cm{grid-column:2;font-size:13px;line-height:1.45;color:var(--fg);background:var(--surface-2);border-radius:6px;padding:6px 8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.hlitem .cm b{font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-right:6px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:50;background:var(--fg);color:var(--bg);padding:9px 14px;border-radius:9px;box-shadow:var(--shadow);font-size:13px;max-width:min(520px,calc(100vw - 32px))}
+.toast.err{background:var(--danger);color:#fff}
+.unavail{padding:10px 12px;border-radius:8px;background:var(--surface-2);font-size:13px;color:var(--muted);line-height:1.5}
+
+@media (max-width:820px){
+  .main{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1.15fr) minmax(0,1fr)}
+  .split{display:none}
+  .panel{border-left:0;border-top:1px solid var(--line)}
+  .docname{display:none}
+}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><i aria-hidden="true"></i>Margin Reader</div>
+    <div class="docname" id="docname">No document open</div>
+    <div class="ctrls">
+      <div class="pager" id="pager" hidden>
+        <span>p.</span><input id="pageInput" type="text" inputmode="numeric" aria-label="Go to page"><span id="pageCount">/ 0</span>
+      </div>
+      <button class="btn icon" id="zoomOut" title="Zoom out" aria-label="Zoom out" disabled>−</button>
+      <button class="btn icon" id="zoomIn" title="Zoom in" aria-label="Zoom in" disabled>+</button>
+      <button class="btn" id="savePdf" title="Save a copy of the PDF with your highlights" disabled>Save PDF</button>
+      <button class="btn primary" id="openBtn">Open PDF</button>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+    </div>
+  </header>
+
+  <div class="main" id="main">
+    <section class="viewer" id="viewer" aria-label="Document">
+      <div class="empty" id="empty">
+        <div class="drop" id="drop">
+          <h2>Open a paper or dissertation</h2>
+          <p>Drop a PDF here or choose one. Select any sentence or paragraph to have it explained, or ask about the page you are on.</p>
+          <button class="btn primary" id="openBtn2">Choose PDF</button>
+          <p class="fine">The PDF stays in your browser. Only the text you ask about is sent to Claude.</p>
+        </div>
+      </div>
+      <div class="pages" id="pages" hidden></div>
+      <div class="selbar" id="selbar" hidden>
+        <button class="hl" id="selExplain">Explain</button>
+        <button id="selSimplify">Simpler</button>
+        <button id="selAsk">Ask about this</button>
+        <button id="selComment">Comment</button>
+        <span class="sep" aria-hidden="true"></span>
+        <span id="selSwatches" style="display:contents"></span>
+      </div>
+      <div class="cbox" id="cbox" hidden role="dialog" aria-label="Comment">
+        <div class="cq" id="cboxQuote"></div>
+        <textarea id="cboxText" rows="3" placeholder="Add a comment…" aria-label="Comment text"></textarea>
+        <div class="cbtns">
+          <button class="btn" id="cboxDel">Delete comment</button>
+          <span class="grow"></span>
+          <button class="btn" id="cboxCancel">Cancel</button>
+          <button class="btn primary" id="cboxSave">Save</button>
+        </div>
+        <span class="hint">Ctrl or ⌘ + Enter to save</span>
+      </div>
+      <div class="hlpop" id="hlpop" hidden>
+        <span id="popSwatches" style="display:contents"></span>
+        <span class="sep" aria-hidden="true"></span>
+        <button id="popComment">Comment</button>
+        <button id="popExplain">Explain</button>
+        <button id="popRemove">Remove</button>
+      </div>
+    </section>
+    <div class="split" id="split" role="separator" aria-orientation="vertical" aria-label="Resize panel"></div>
+    <aside class="panel" aria-label="Claude">
+      <div class="ptop">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tabChat" aria-selected="true">Claude</button>
+          <button role="tab" id="tabHl" aria-selected="false">Highlights<span class="n" id="hlCount">0</span></button>
+        </div>
+        <div class="seg" id="levelSeg" role="group" aria-label="Explanation level" title="Explain for">
+          <button id="lvlPlain" aria-pressed="true">Newcomer</button>
+          <button id="lvlExpert" aria-pressed="false">Expert</button>
+        </div>
+        <div class="actions" id="actions">
+          <button class="btn" id="explainPage" disabled>Explain this page</button>
+          <button class="btn" id="explainSel" disabled>Explain selection</button>
+        </div>
+      </div>
+      <div class="thread" id="thread" aria-live="polite">
+        <div class="msg user example">
+          <span class="example-tag">Example</span>
+          <div class="who">You <span class="pg">p.12</span></div>
+          <div class="quote"><mark>Direct intervention makes Δe the simulator-defined effect of removal, but the qualification analysis shows that it is difficult to recover from the compact pre-action observation.</mark></div>
+        </div>
+        <div class="msg example">
+          <div class="who">Claude</div>
+          <div class="answer"><p><strong>In short:</strong> Δe is the true effect of removing an object, but a model can't reliably predict it from what the robot sees beforehand.</p><p>Because the simulator actually removes each object and measures the change, Δe is causally correct by construction. The catch is learnability: the compact observation available <em>before</em> acting doesn't carry enough information to estimate it well.</p></div>
+        </div>
+      </div>
+      <div class="hlview" id="hlview" hidden>
+        <div class="hlhead">
+          <span class="note" id="hlSummary">No highlights yet</span>
+          <div class="filters" id="hlFilters" role="group" aria-label="Filter by color"></div>
+          <button class="btn" id="hlAskAll" disabled>Summarize highlights</button>
+        </div>
+        <div id="hlList"></div>
+      </div>
+      <div class="composer" id="composer">
+        <div class="ctx" id="ctx" hidden><span id="ctxText"></span><button id="ctxClear" aria-label="Clear selection context">clear</button></div>
+        <div class="unavail" id="unavail" hidden>Claude isn't available in this view. Open this page in Claude while signed in to ask questions.</div>
+        <div class="row" id="askRow">
+          <textarea id="ask" rows="1" placeholder="Ask about this page or your selection…" aria-label="Ask Claude"></textarea>
+          <button class="btn primary" id="send" disabled>Ask</button>
+          <button class="btn" id="stop" hidden>Stop</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const viewer = $("viewer"), pagesEl = $("pages"), thread = $("thread");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+  // ---------- Markdown ----------
+  if (window.marked) {
+    marked.use({ gfm: true, breaks: false, renderer: { html: (h) => esc(typeof h === "string" ? h : (h && h.text) || "") } });
+  }
+  const md = (t) => (window.marked ? marked.parse(t) : "<p>" + esc(t).replace(/\n\n/g, "</p><p>") + "</p>");
+
+  // ---------- State ----------
+  let pdf = null, docTitle = "", pages = [], zoom = 1, fitScale = 1, baseW = 612, baseH = 792;
+  let current = 1, selection = null, level = "plain", busy = false, ctl = null;
+  const textCache = new Map();
+  let history = []; // {role, content} compact turns
+  let sample = null, canImages = false;
+  const COLORS = [
+    { key: "yellow", name: "Yellow", c: "#ffd84d" },
+    { key: "green", name: "Green", c: "#8fe3a2" },
+    { key: "blue", name: "Blue", c: "#a3c9ff" },
+    { key: "pink", name: "Pink", c: "#ffa6c9" },
+  ];
+  const colorOf = (k) => (COLORS.find((x) => x.key === k) || COLORS[0]).c;
+  let hls = [], fp = "", activeHl = null, hlFilter = null;
+  let origBytes = null, origName = "document.pdf", lastColor = "yellow";
+
+  // ---------- Highlight storage: the viewer's private db space when available, else this browser ----------
+  const store = {
+    db: null, uid: null,
+    col() { return this.db.collection("data/users/" + this.uid); },
+    lsKey: (f) => "margin-reader:hl:" + f,
+    lsRead(f) { try { return JSON.parse(localStorage.getItem(this.lsKey(f)) || "[]"); } catch { return []; } },
+    lsWrite(f, list) { try { localStorage.setItem(this.lsKey(f), JSON.stringify(list)); } catch {} },
+    async load(f) {
+      await this.ready;
+      if (this.db) {
+        try { const qs = await this.col().where("doc", "==", f).get(); return qs.docs.map((d) => ({ ...d.data(), id: d.id })); }
+        catch { this.db = null; }
+      }
+      return this.lsRead(f);
+    },
+    async put(h) {
+      if (this.db) { try { await this.col().doc(h.id).set({ ...h, rects: h.rects.map((r) => ({ ...r })) }); return; } catch { this.db = null; } }
+      this.lsWrite(fp, hls);
+    },
+    async del(id) {
+      if (this.db) { try { await this.col().doc(id).delete(); return; } catch { this.db = null; } }
+      this.lsWrite(fp, hls);
+    },
+  };
+  store.ready = (async () => {
+    try {
+      if (!window.claude) return;
+      const [db, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+      const id = user ? await user.id() : null;
+      if (db && id) { store.db = db; store.uid = id; }
+    } catch {}
+  })();
+
+  // ---------- PDF loading ----------
+  const openFile = () => $("fileInput").click();
+  $("openBtn").onclick = openFile; $("openBtn2").onclick = openFile;
+  $("fileInput").onchange = (e) => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; };
+  const drop = $("drop");
+  ["dragenter","dragover"].forEach((t) => viewer.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave","drop"].forEach((t) => viewer.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+  viewer.addEventListener("drop", (e) => { const f = [...(e.dataTransfer?.files || [])].find((f) => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name)); if (f) loadFile(f); });
+
+  async function loadFile(file) {
+    if (!window.pdfjsLib) { addNote("The PDF engine didn't load. Reload the page and try again.", true); return; }
+    try {
+      const data = new Uint8Array(await file.arrayBuffer());
+      origBytes = data.slice(); origName = file.name;
+      if (pdf) { try { await pdf.destroy(); } catch {} }
+      pdf = await pdfjsLib.getDocument({ data, disableFontFace: false, isEvalSupported: false, useSystemFonts: true }).promise;
+    } catch (err) {
+      addNote("Couldn't open that file. It may be damaged or password-protected.", true); return;
+    }
+    textCache.clear(); history = []; clearSelection(); closePop();
+    fp = String((pdf.fingerprints && pdf.fingerprints[0]) || file.name).replace(/[^A-Za-z0-9_.~:@+-]/g, "_");
+    hls = []; hlFilter = null;
+    store.load(fp).then((list) => { hls = Array.isArray(list) ? list.filter((h) => h && Array.isArray(h.rects)) : []; pages.forEach((P) => drawHl(P.n)); renderHlList(); });
+    thread.querySelectorAll(".example").forEach((n) => n.remove());
+    let meta = null; try { meta = await pdf.getMetadata(); } catch {}
+    docTitle = (meta?.info?.Title || "").trim(); if (!docTitle || /^untitled$/i.test(docTitle)) docTitle = file.name.replace(/\.pdf$/i, "");
+    $("docname").textContent = docTitle;
+    const p1 = await pdf.getPage(1); const vp = p1.getViewport({ scale: 1 }); baseW = vp.width; baseH = vp.height;
+    $("empty").hidden = true; pagesEl.hidden = false; $("pager").hidden = false;
+    $("pageCount").textContent = "/ " + pdf.numPages;
+    $("zoomIn").disabled = $("zoomOut").disabled = $("savePdf").disabled = false;
+    zoom = 1; buildPages(); viewer.scrollTop = 0; setCurrent(1);
+    updateButtons();
+    addNote(`Opened “${docTitle}” · ${pdf.numPages} pages. Select text to explain it, or use “Explain this page”.`);
+  }
+
+  function computeFit() {
+    const avail = Math.max(240, viewer.clientWidth - 24 - 16);
+    fitScale = Math.min(avail / baseW, 2.2);
+  }
+  const scale = () => fitScale * zoom;
+
+  let io = null;
+  function buildPages() {
+    computeFit();
+    pagesEl.textContent = ""; pages = [];
+    io?.disconnect();
+    io = new IntersectionObserver((ents) => { for (const e of ents) if (e.isIntersecting) renderPage(+e.target.dataset.n); }, { root: viewer, rootMargin: "800px 0px" });
+    const s = scale();
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const el = document.createElement("div");
+      el.className = "page"; el.dataset.n = n;
+      const vw = (pages[n - 1]?.w || baseW), vh = (pages[n - 1]?.h || baseH);
+      el.style.width = Math.floor(vw * s) + "px"; el.style.height = Math.floor(vh * s) + "px";
+      el.innerHTML = `<span class="pno">${n}</span><div class="hlLayer"></div><div class="cmLayer"></div>`;
+      pagesEl.appendChild(el);
+      pages.push({ n, el, rendered: false, w: baseW, h: baseH, task: null });
+      io.observe(el);
+    }
+    pages.forEach((P) => drawHl(P.n));
+    renderHlList();
+  }
+
+  async function renderPage(n) {
+    const P = pages[n - 1]; if (!P || P.rendered) return; P.rendered = true;
+    const s = scale();
+    try {
+      const page = await pdf.getPage(n);
+      const vp1 = page.getViewport({ scale: 1 }); P.w = vp1.width; P.h = vp1.height;
+      const vp = page.getViewport({ scale: s });
+      const el = P.el; el.style.width = Math.floor(vp.width) + "px"; el.style.height = Math.floor(vp.height) + "px";
+      el.style.setProperty("--scale-factor", s);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
+      const ctx = canvas.getContext("2d");
+      el.insertBefore(canvas, el.firstChild);
+      await page.render({ canvasContext: ctx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null }).promise;
+      const tc = await page.getTextContent();
+      if (!textCache.has(n)) textCache.set(n, textFrom(tc));
+      const tl = document.createElement("div"); tl.className = "textLayer"; el.appendChild(tl);
+      await pdfjsLib.renderTextLayer({ textContentSource: tc, container: tl, viewport: vp, textDivs: [] }).promise;
+    } catch (err) { P.rendered = false; }
+  }
+
+  function textFrom(tc) {
+    let out = "";
+    for (const it of tc.items) { if (typeof it.str !== "string") continue; out += it.str; out += it.hasEOL ? "\n" : (it.str.endsWith(" ") ? "" : " "); }
+    return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/ {2,}/g, " ").trim();
+  }
+  async function pageText(n) {
+    if (textCache.has(n)) return textCache.get(n);
+    const page = await pdf.getPage(n); const t = textFrom(await page.getTextContent()); textCache.set(n, t); return t;
+  }
+
+  // ---------- Navigation & zoom ----------
+  let raf = 0;
+  viewer.addEventListener("scroll", () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; trackPage(); positionSelbar(); }); });
+  function trackPage() {
+    if (!pages.length) return;
+    const mid = viewer.scrollTop + viewer.clientHeight * 0.4;
+    let best = 1;
+    for (const P of pages) { if (P.el.offsetTop <= mid) best = P.n; else break; }
+    if (best !== current) setCurrent(best);
+  }
+  function setCurrent(n) { current = n; $("pageInput").value = n; $("explainPage").textContent = `Explain page ${n}`; }
+  $("pageInput").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !pdf) return;
+    const n = Math.max(1, Math.min(pdf.numPages, parseInt(e.target.value, 10) || current));
+    pages[n - 1].el.scrollIntoView({ block: "start" }); setCurrent(n);
+  });
+  function rezoom(f) {
+    if (!pdf) return;
+    const rel = viewer.scrollTop / Math.max(1, pagesEl.scrollHeight);
+    zoom = Math.max(0.5, Math.min(3, f)); buildPages();
+    viewer.scrollTop = rel * pagesEl.scrollHeight;
+  }
+  $("zoomIn").onclick = () => rezoom(zoom * 1.2);
+  $("zoomOut").onclick = () => rezoom(zoom / 1.2);
+  let rT = 0; let lastW = viewer.clientWidth;
+  new ResizeObserver(() => { if (!pdf) return; clearTimeout(rT); rT = setTimeout(() => { if (Math.abs(viewer.clientWidth - lastW) > 8) { lastW = viewer.clientWidth; rezoom(zoom); } }, 200); }).observe(viewer);
+
+  // Resizable split
+  const split = $("split"), main = $("main");
+  split.addEventListener("pointerdown", (e) => {
+    split.setPointerCapture(e.pointerId); split.classList.add("drag");
+    const move = (ev) => { const r = main.getBoundingClientRect(); const w = Math.max(300, Math.min(r.width - 320, r.right - ev.clientX)); main.style.setProperty("--panel-w", w + "px"); };
+    const up = () => { split.classList.remove("drag"); split.removeEventListener("pointermove", move); split.removeEventListener("pointerup", up); };
+    split.addEventListener("pointermove", move); split.addEventListener("pointerup", up);
+  });
+
+  // ---------- Selection ----------
+  const selbar = $("selbar");
+  function readSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    const node = range.commonAncestorContainer.nodeType === 1 ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement;
+    if (!pagesEl.contains(node)) return null;
+    const text = sel.toString().replace(/\s+\n/g, "\n").replace(/[ \t]+/g, " ").trim();
+    if (text.length < 2) return null;
+    const startEl = (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement).closest(".page");
+    const page = startEl ? +startEl.dataset.n : current;
+    return { text, page, rect: range.getBoundingClientRect() };
+  }
+  document.addEventListener("selectionchange", () => {
+    const s = readSelection();
+    if (s) { selection = s; showCtx(); }
+    if (!s) selbar.hidden = true;
+    updateButtons();
+  });
+  viewer.addEventListener("pointerup", (e) => { if (selbar.contains(e.target)) return; setTimeout(() => { const s = readSelection(); if (s) { selection = s; showSelbar(s.rect); } }, 0); });
+  function showSelbar(rect) {
+    selbar.hidden = false; selbar._rect = rect; positionSelbar();
+  }
+  function positionSelbar() {
+    if (selbar.hidden) return;
+    const s = readSelection(); if (!s) { selbar.hidden = true; return; }
+    const vr = viewer.getBoundingClientRect(), r = s.rect;
+    let top = r.bottom - vr.top + viewer.scrollTop + 8;
+    let left = r.left - vr.left + viewer.scrollLeft;
+    left = Math.max(8, Math.min(left, viewer.clientWidth - selbar.offsetWidth - 8 + viewer.scrollLeft));
+    selbar.style.top = top + "px"; selbar.style.left = left + "px";
+  }
+  function showCtx() {
+    if (!selection) { $("ctx").hidden = true; return; }
+    $("ctx").hidden = false;
+    $("ctxText").textContent = `Selection on p.${selection.page}: “${selection.text.slice(0, 90)}${selection.text.length > 90 ? "…" : ""}”`;
+  }
+  function clearSelection() { selection = null; $("ctx").hidden = true; selbar.hidden = true; updateButtons(); }
+  $("ctxClear").onclick = () => { window.getSelection()?.removeAllRanges(); clearSelection(); };
+  selbar.addEventListener("pointerdown", (e) => e.preventDefault()); // keep selection alive
+  $("selExplain").onclick = () => explainSelection("explain");
+  $("selSimplify").onclick = () => explainSelection("simplify");
+  $("selAsk").onclick = () => { selbar.hidden = true; showTab("chat"); $("ask").focus(); };
+  const swatch = (col, pressed) => `<button class="sw" data-c="${col.key}" style="--c:${col.c}" aria-label="Highlight ${col.name.toLowerCase()}" title="Highlight ${col.name.toLowerCase()}"${pressed != null ? ` aria-pressed="${pressed}"` : ""}><i></i></button>`;
+  $("selSwatches").innerHTML = COLORS.map((c) => swatch(c)).join("");
+  $("selSwatches").addEventListener("click", (e) => { const b = e.target.closest(".sw"); if (b) addHighlight(b.dataset.c); });
+
+  // ---------- Highlights ----------
+  const newId = () => "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  function mergeRects(rs) {
+    rs.sort((a, b) => a.y - b.y || a.x - b.x);
+    const out = [];
+    for (const r of rs) {
+      const last = out[out.length - 1];
+      if (last) {
+        const ov = Math.min(last.y + last.h, r.y + r.h) - Math.max(last.y, r.y);
+        if (ov > 0.5 * Math.min(last.h, r.h) && r.x <= last.x + last.w + 0.012) {
+          const x2 = Math.max(last.x + last.w, r.x + r.w), y1 = Math.min(last.y, r.y), y2 = Math.max(last.y + last.h, r.y + r.h);
+          last.x = Math.min(last.x, r.x); last.w = x2 - last.x; last.y = y1; last.h = y2 - y1; continue;
+        }
+      }
+      out.push({ ...r });
+    }
+    const r4 = (v) => Math.round(v * 1e4) / 1e4;
+    return out.map((r) => ({ x: r4(r.x), y: r4(r.y), w: r4(r.w), h: r4(r.h) }));
+  }
+  function addHighlight(color) {
+    const sel = window.getSelection(); if (!sel || sel.isCollapsed || !pdf) return;
+    const range = sel.getRangeAt(0);
+    const byPage = new Map();
+    for (const r of range.getClientRects()) {
+      if (r.width < 1 || r.height < 1) continue;
+      for (const P of pages) {
+        const pr = P.el.getBoundingClientRect();
+        if (r.bottom <= pr.top || r.top >= pr.bottom || r.right <= pr.left || r.left >= pr.right) continue;
+        const x1 = Math.max(r.left, pr.left), x2 = Math.min(r.right, pr.right), y1 = Math.max(r.top, pr.top), y2 = Math.min(r.bottom, pr.bottom);
+        const nr = { x: (x1 - pr.left) / pr.width, y: (y1 - pr.top) / pr.height, w: (x2 - x1) / pr.width, h: (y2 - y1) / pr.height };
+        if (nr.h > 0.08 || nr.w > 0.98) break; // skip whole-layer boxes, keep line fragments
+        if (!byPage.has(P.n)) byPage.set(P.n, []);
+        byPage.get(P.n).push(nr); break;
+      }
+    }
+    const text = sel.toString().replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, " ").trim();
+    const created = [];
+    lastColor = color;
+    for (const [page, rs] of byPage) {
+      const h = { id: newId(), doc: fp, page, color, rects: mergeRects(rs), text: text.slice(0, 2000), comment: "", created: Date.now() };
+      hls.push(h); created.push(h); drawHl(page); store.put(h);
+    }
+    sel.removeAllRanges(); clearSelection(); renderHlList();
+    return created;
+  }
+  function drawHl(n) {
+    const P = pages[n - 1]; if (!P) return;
+    const layer = P.el.querySelector(".hlLayer"); if (!layer) return;
+    layer.textContent = "";
+    const cl = P.el.querySelector(".cmLayer"); if (cl) cl.textContent = "";
+    for (const h of hls) {
+      if (h.page !== n) continue;
+      if (h.comment && cl && h.rects.length) {
+        const m = document.createElement("button");
+        m.className = "cmark"; m.dataset.id = h.id; m.style.setProperty("--c", colorOf(h.color));
+        m.style.top = (Math.min(...h.rects.map((r) => r.y)) * 100) + "%";
+        m.title = h.comment; m.setAttribute("aria-label", "Comment: " + h.comment.slice(0, 80));
+        m.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>';
+        cl.appendChild(m);
+      }
+      for (const r of h.rects) {
+        const d = document.createElement("div");
+        d.style.cssText = `left:${r.x * 100}%;top:${r.y * 100}%;width:${r.w * 100}%;height:${r.h * 100}%;background:${colorOf(h.color)}`;
+        if (activeHl === h.id) d.className = "active";
+        layer.appendChild(d);
+      }
+    }
+  }
+  function hitHighlight(e) {
+    const pageEl = e.target.closest?.(".page"); if (!pageEl) return null;
+    const pr = pageEl.getBoundingClientRect(); const x = (e.clientX - pr.left) / pr.width, y = (e.clientY - pr.top) / pr.height;
+    const n = +pageEl.dataset.n;
+    for (let i = hls.length - 1; i >= 0; i--) {
+      const h = hls[i]; if (h.page !== n) continue;
+      if (h.rects.some((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)) return h;
+    }
+    return null;
+  }
+  const hlpop = $("hlpop");
+  function setActive(id) {
+    const prev = activeHl; activeHl = id;
+    for (const k of [prev, id]) { const h = k && hls.find((x) => x.id === k); if (h) drawHl(h.page); }
+  }
+  viewer.addEventListener("click", (e) => {
+    if (hlpop.contains(e.target) || selbar.contains(e.target) || cbox.contains(e.target)) return;
+    const mk = e.target.closest?.(".cmark");
+    if (mk) { const h = hls.find((x) => x.id === mk.dataset.id); if (h) { closePop(); openComment(h); } return; }
+    if (!cbox.hidden) { saveComment(); return; }
+    const sel = window.getSelection(); if (sel && !sel.isCollapsed) return;
+    const h = hitHighlight(e);
+    if (h) openPop(h, e); else closePop();
+  });
+  function openPop(h, e) {
+    setActive(h.id);
+    $("popSwatches").innerHTML = COLORS.map((c) => swatch(c, c.key === h.color)).join("");
+    hlpop.hidden = false;
+    const vr = viewer.getBoundingClientRect();
+    const top = e.clientY - vr.top + viewer.scrollTop + 14;
+    const left = Math.max(8, Math.min(e.clientX - vr.left + viewer.scrollLeft - 40, viewer.clientWidth - hlpop.offsetWidth - 8 + viewer.scrollLeft));
+    hlpop.style.top = top + "px"; hlpop.style.left = left + "px";
+  }
+  function closePop() { hlpop.hidden = true; if (activeHl) setActive(null); }
+  hlpop.addEventListener("pointerdown", (e) => e.preventDefault());
+  $("popSwatches").addEventListener("click", (e) => {
+    const b = e.target.closest(".sw"); const h = hls.find((x) => x.id === activeHl); if (!b || !h) return;
+    h.color = b.dataset.c; drawHl(h.page); store.put(h); renderHlList();
+    $("popSwatches").querySelectorAll(".sw").forEach((s) => s.setAttribute("aria-pressed", s.dataset.c === h.color));
+  });
+  $("popRemove").onclick = () => {
+    const h = hls.find((x) => x.id === activeHl); if (!h) return;
+    hls = hls.filter((x) => x.id !== h.id); activeHl = null; hlpop.hidden = true; drawHl(h.page); store.del(h.id); renderHlList();
+  };
+  $("popExplain").onclick = () => {
+    const h = hls.find((x) => x.id === activeHl); if (!h) return;
+    closePop(); selection = { text: h.text, page: h.page, note: h.comment || "" }; showTab("chat"); explainSelection("explain");
+  };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!cbox.hidden) closeComment(); else closePop(); } });
+
+  // ---------- Comments ----------
+  const cbox = $("cbox");
+  let commentFor = null;
+  function openComment(h) {
+    commentFor = h.id; setActive(h.id);
+    cbox.style.setProperty("--c", colorOf(h.color));
+    $("cboxQuote").textContent = h.text;
+    $("cboxText").value = h.comment || "";
+    $("cboxDel").hidden = !h.comment;
+    cbox.hidden = false;
+    const P = pages[h.page - 1];
+    const last = h.rects.reduce((a, r) => (r.y + r.h > a.y + a.h ? r : a), h.rects[0]);
+    const first = h.rects[0];
+    let top = P.el.offsetTop + (last.y + last.h) * P.el.offsetHeight + 8;
+    let left = P.el.offsetLeft + first.x * P.el.offsetWidth;
+    left = Math.max(8 + viewer.scrollLeft, Math.min(left, viewer.scrollLeft + viewer.clientWidth - cbox.offsetWidth - 8));
+    cbox.style.top = top + "px"; cbox.style.left = left + "px";
+    const bottom = top + cbox.offsetHeight + 12;
+    if (bottom > viewer.scrollTop + viewer.clientHeight) viewer.scrollTop = bottom - viewer.clientHeight;
+    $("cboxText").focus();
+  }
+  function closeComment() { cbox.hidden = true; commentFor = null; setActive(null); }
+  function saveComment() {
+    const h = hls.find((x) => x.id === commentFor);
+    if (h) {
+      const v = $("cboxText").value.trim();
+      if (v !== (h.comment || "")) { h.comment = v.slice(0, 5000); store.put(h); drawHl(h.page); renderHlList(); toast(v ? "Comment saved." : "Comment removed."); }
+    }
+    closeComment();
+  }
+  $("cboxSave").onclick = saveComment;
+  $("cboxCancel").onclick = closeComment;
+  $("cboxDel").onclick = () => { $("cboxText").value = ""; saveComment(); };
+  $("cboxText").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveComment(); } });
+  $("selComment").onclick = () => { const made = addHighlight(lastColor); if (made && made.length) openComment(made[0]); };
+  $("popComment").onclick = () => { const h = hls.find((x) => x.id === activeHl); if (!h) return; hlpop.hidden = true; openComment(h); };
+
+  const shownHls = () => hls.filter((h) => !hlFilter || h.color === hlFilter).sort((a, b) => a.page - b.page || (a.rects[0]?.y || 0) - (b.rects[0]?.y || 0));
+  function renderHlList() {
+    $("hlCount").textContent = hls.length;
+    const list = $("hlList");
+    if (hlFilter && !hls.some((h) => h.color === hlFilter)) hlFilter = null;
+    $("hlFilters").innerHTML = COLORS.filter((c) => hls.some((h) => h.color === c.key))
+      .map((c) => `<button data-c="${c.key}" style="--c:${c.c}" aria-pressed="${hlFilter === c.key}" title="Show only ${c.name.toLowerCase()}" aria-label="Show only ${c.name.toLowerCase()}"><i></i></button>`).join("");
+    const shown = shownHls();
+    $("hlSummary").textContent = hls.length ? `${shown.length} highlight${shown.length === 1 ? "" : "s"}${hlFilter ? " in this color" : ""}` : "No highlights yet";
+    $("hlAskAll").disabled = !(sample && shown.length && !busy);
+    if (!pdf) { list.innerHTML = `<p class="hlempty">Open a PDF, select some text, then pick a color in the toolbar to highlight it.</p>`; return; }
+    if (!hls.length) { list.innerHTML = `<p class="hlempty">Select text in the document and pick a color in the toolbar. Click a highlight later to recolor, explain or remove it.</p>`; return; }
+    list.innerHTML = shown.map((h) => `<button class="hlitem" data-id="${h.id}" style="--c:${colorOf(h.color)}"><span class="dot"></span><span class="pg">p.${h.page}</span><span class="tx">${esc(h.text)}</span>${h.comment ? `<span class="cm"><b>Comment</b>${esc(h.comment)}</span>` : ""}</button>`).join("");
+  }
+  $("hlFilters").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; hlFilter = hlFilter === b.dataset.c ? null : b.dataset.c; renderHlList(); });
+  $("hlList").addEventListener("click", (e) => {
+    const b = e.target.closest(".hlitem"); if (!b) return;
+    const h = hls.find((x) => x.id === b.dataset.id); const P = h && pages[h.page - 1]; if (!P) return;
+    viewer.scrollTop = P.el.offsetTop + (h.rects[0]?.y || 0) * P.el.offsetHeight - viewer.clientHeight * 0.3;
+    setActive(h.id);
+    setTimeout(() => { if (activeHl === h.id && hlpop.hidden) setActive(null); }, 1600);
+  });
+  $("hlAskAll").onclick = async () => {
+    if (!sample || busy) return;
+    const shown = shownHls(); if (!shown.length) return;
+    const body = shown.map((h) => `[p.${h.page}, ${h.color}] ${h.text}${h.comment ? `\n   Reader's comment: ${h.comment}` : ""}`).join("\n");
+    showTab("chat");
+    addUser({ text: `Summarize my ${shown.length} highlight${shown.length === 1 ? "" : "s"}${hlFilter ? ` (${hlFilter})` : ""}`, page: shown[0].page });
+    const fence = '"'.repeat(3);
+    await run(`These are passages the reader highlighted, in page order, each tagged with its page and the color they chose, plus any comment the reader wrote on it. Weigh the comments: they show what the reader thought mattered or doubted. Summarize what they add up to: the main thread connecting them, grouped by theme, and any gaps or tensions between them. Cite page numbers.\n\n${fence}\n${clip(body, 30000)}\n${fence}`, "Summarize my highlights.");
+  };
+
+  // ---------- Tabs ----------
+  function showTab(t) {
+    const chat = t === "chat";
+    $("tabChat").setAttribute("aria-selected", chat); $("tabHl").setAttribute("aria-selected", !chat);
+    thread.hidden = !chat; $("composer").hidden = !chat; $("actions").hidden = !chat; $("levelSeg").hidden = !chat;
+    $("hlview").hidden = chat;
+    if (!chat) renderHlList();
+  }
+  $("tabChat").onclick = () => showTab("chat"); $("tabHl").onclick = () => showTab("hl");
+  $("explainSel").onclick = () => explainSelection("explain");
+  $("explainPage").onclick = () => explainPage();
+
+  // ---------- Level ----------
+  const setLevel = (l) => { level = l; $("lvlPlain").setAttribute("aria-pressed", l === "plain"); $("lvlExpert").setAttribute("aria-pressed", l === "expert"); };
+  $("lvlPlain").onclick = () => setLevel("plain"); $("lvlExpert").onclick = () => setLevel("expert");
+
+  // ---------- Claude ----------
+  (async () => {
+    try { sample = window.claude ? await window.claude.use("sample") : null; } catch { sample = null; }
+    if (sample) { try { const lim = await sample.limits(); canImages = !!lim?.images; } catch { canImages = false; } }
+    if (!sample) { $("unavail").hidden = false; $("askRow").hidden = true; }
+    updateButtons();
+  })();
+
+  function updateButtons() {
+    const ok = !!sample && !busy;
+    $("explainPage").disabled = !(ok && pdf);
+    $("explainSel").disabled = !(ok && pdf && selection);
+    $("send").disabled = !(ok && pdf);
+    ["selExplain","selSimplify","selAsk"].forEach((id) => $(id).disabled = !ok);
+    $("hlAskAll").disabled = !(ok && shownHls().length);
+  }
+
+  function rules() {
+    const lv = level === "plain"
+      ? "Audience: an intelligent reader who is new to this field. Avoid jargon; when a technical term or symbol is unavoidable, define it in plain words. Use a concrete analogy when it helps."
+      : "Audience: a researcher in or near this field. Be precise and concise. Focus on the argument, the assumptions it rests on, and how this part connects to the rest of the work.";
+    return `You are a reading companion built into a PDF reader. The reader is working through a document titled “${docTitle}”.
+${lv}
+Format: short paragraphs or short bullet lists in Markdown. Start with a one-sentence answer in bold labelled "In short:". Write math in plain text or Unicode symbols (Δe, ≤, α), never LaTeX. Keep it under about 250 words unless the reader asks for more. If the text seems ambiguous, inconsistent, or possibly wrong, say so plainly. Text extracted from PDFs can have broken hyphenation or odd spacing; read through it.`;
+  }
+  async function docContext() {
+    const n = Math.min(2, pdf.numPages); let t = "";
+    for (let i = 1; i <= n; i++) t += (await pageText(i)) + "\n\n";
+    return `Opening pages of the document, for orientation (title, abstract or contents):\n"""\n${t.slice(0, 3500)}\n"""`;
+  }
+  const clip = (s, n) => (s.length > n ? s.slice(0, n) + " …[truncated]" : s);
+
+  async function explainSelection(kind) {
+    if (!selection || !sample || busy) return;
+    const s = selection; selbar.hidden = true;
+    const ptxt = await pageText(s.page);
+    const ask = kind === "simplify"
+      ? "Rewrite this passage in the simplest plain language you can, sentence by sentence, keeping the meaning exact. Then add one line on why it matters here."
+      : "Explain this passage. Say what it means, unpack each key sentence or term in order, and say what role it plays in the surrounding argument.";
+    const full = `${ask}\n\nPassage (page ${s.page}):\n"""\n${clip(s.text, 6000)}\n"""${s.note ? `\n\nThe reader wrote this comment on the passage; take it into account: "${clip(s.note, 1500)}"` : ""}\n\nFull text of page ${s.page}, for context:\n"""\n${clip(ptxt, 7000)}\n"""`;
+    const compact = `${kind === "simplify" ? "Simplify" : "Explain"} this passage from page ${s.page}: "${clip(s.text, 600)}"`;
+    addUser({ quote: s.text, page: s.page, label: kind === "simplify" ? "Simplify" : "Explain" });
+    await run(full, compact);
+  }
+
+  async function explainPage() {
+    if (!sample || busy || !pdf) return;
+    const n = current; const ptxt = await pageText(n);
+    let img = null;
+    if (canImages) img = await pageImage(n).catch(() => null);
+    const full = `Explain page ${n} of the document.${img ? " An image of the page is attached; use it for figures, tables and equations, and the extracted text below for wording." : ""}
+Cover, in order: what this page is doing in one or two sentences; the key points in the order they appear; any terms, symbols or figures the reader needs defined; and anything to watch out for.
+
+Extracted text of page ${n}:
+"""
+${clip(ptxt || "(no extractable text on this page; it may be a scanned image or a figure)", 9000)}
+"""`;
+    addUser({ text: `Explain page ${n}`, page: n });
+    await run(full, `Explain page ${n}.`, img ? [img] : null);
+  }
+
+  async function sendAsk() {
+    const q = $("ask").value.trim(); if (!q || !sample || busy || !pdf) return;
+    $("ask").value = ""; autoGrow();
+    const n = selection ? selection.page : current; const ptxt = await pageText(n);
+    let full = q + "\n\n";
+    if (selection) full += `The reader has selected this passage on page ${n}:\n"""\n${clip(selection.text, 5000)}\n"""\n\n`;
+    full += `Text of page ${n}, the page the reader is on:\n"""\n${clip(ptxt, 7000)}\n"""`;
+    addUser({ text: q, page: n, quote: selection?.text });
+    await run(full, selection ? `${q} (about this passage on p.${n}: "${clip(selection.text, 400)}")` : `${q} (on p.${n})`);
+  }
+  $("send").onclick = sendAsk;
+  $("ask").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsk(); } });
+  const autoGrow = () => { const t = $("ask"); t.style.height = "auto"; t.style.height = Math.min(140, t.scrollHeight) + "px"; };
+  $("ask").addEventListener("input", autoGrow);
+  $("stop").onclick = () => ctl?.abort();
+
+  async function pageImage(n) {
+    const page = await pdf.getPage(n);
+    const v1 = page.getViewport({ scale: 1 });
+    const s = Math.min(1500 / v1.width, 3);
+    const vp = page.getViewport({ scale: s });
+    const c = document.createElement("canvas"); c.width = Math.floor(vp.width); c.height = Math.floor(vp.height);
+    const ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return await new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej()), "image/jpeg", 0.85));
+  }
+
+  async function run(fullPrompt, compact) {
+    const images = arguments[2];
+    busy = true; updateButtons(); $("stop").hidden = false; $("send").hidden = true;
+    const { answerEl, noteEl } = addAssistant();
+    const ctxTurn = { role: "user", content: rules() + "\n\n" + (await docContext()) };
+    const recent = history.slice(-10);
+    const input = [ctxTurn, ...recent, { role: "user", content: fullPrompt }];
+    ctl = new AbortController();
+    let got = false;
+    try {
+      const opts = { cache: false, signal: ctl.signal, onText: ({ text }) => { got = true; answerEl.innerHTML = md(text); scrollThread(); } };
+      if (images) opts.images = images;
+      const res = await sample(input, opts);
+      answerEl.innerHTML = md(res.text);
+      if (res.truncated) noteEl.textContent = "The answer was cut short. Try a smaller selection.";
+      history.push({ role: "user", content: compact }, { role: "assistant", content: res.text });
+    } catch (e) {
+      const code = e?.code;
+      if (e?.text && code !== "refused") answerEl.innerHTML = md(e.text); else if (!got || code === "refused") answerEl.innerHTML = "";
+      const msg = {
+        cancelled: "Stopped.",
+        not_granted: "Claude wasn't allowed for this page. You can change this in the artifact's permissions.",
+        sampling_disabled: "Claude isn't available for this account.",
+        rate_limited: "Too many requests right now. Wait a moment, then try again.",
+        session_expired: "Your session expired. Sign in again, then retry.",
+        prompt_too_large: "That's too much text at once. Select a shorter passage.",
+        refused: "Claude declined to answer this one. Try rephrasing.",
+        images_unavailable: "Page images aren't available here. Try again; text only will be used.",
+        image_rejected: "The page image couldn't be sent. Try again.",
+      }[code] || "Something went wrong reaching Claude. Try again.";
+      noteEl.textContent = msg; noteEl.classList.toggle("err", code !== "cancelled");
+      if (code === "images_unavailable") canImages = false;
+      if (["not_granted", "sampling_disabled", "not_declared", "capability_disabled", "capability_removed"].includes(code)) { sample = null; $("unavail").hidden = false; $("askRow").hidden = true; }
+      if (!answerEl.innerHTML) answerEl.remove();
+    } finally {
+      answerEl.parentElement?.querySelector(".thinking")?.remove();
+      busy = false; ctl = null; $("stop").hidden = true; $("send").hidden = false; updateButtons(); scrollThread();
+    }
+  }
+
+  // ---------- Thread rendering ----------
+  function scrollThread() { thread.scrollTop = thread.scrollHeight; }
+  function addUser({ text, quote, page, label }) {
+    const m = document.createElement("div"); m.className = "msg user";
+    m.innerHTML = `<div class="who">You <span class="pg">p.${page}</span>${label ? " · " + esc(label) : ""}</div>`;
+    if (quote) { const q = document.createElement("div"); q.className = "quote" + (quote.length > 320 ? " long" : ""); q.innerHTML = `<mark>${esc(quote)}</mark>`; m.appendChild(q); }
+    if (text) { const b = document.createElement("div"); b.className = "body"; b.textContent = text; m.appendChild(b); }
+    thread.appendChild(m); scrollThread();
+  }
+  function addAssistant() {
+    const m = document.createElement("div"); m.className = "msg";
+    m.innerHTML = `<div class="who">Claude</div><div class="thinking">Reading…</div><div class="answer"></div><div class="note"></div>`;
+    thread.appendChild(m); scrollThread();
+    const answerEl = m.querySelector(".answer"), noteEl = m.querySelector(".note"), th = m.querySelector(".thinking");
+    const obs = new MutationObserver(() => { if (answerEl.innerHTML) { th.remove(); obs.disconnect(); } });
+    obs.observe(answerEl, { childList: true });
+    return { answerEl, noteEl };
+  }
+  renderHlList();
+
+  // ---------- Save PDF with highlights ----------
+  let toastT = 0;
+  function toast(msg, err) {
+    const t = $("toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, err ? 6000 : 3500);
+  }
+  const downloadsP = window.claude ? window.claude.use("downloads").catch(() => null) : Promise.resolve(null);
+  const hexRgb = (hex) => [1, 3, 5].map((i) => Math.round((parseInt(hex.slice(i, i + 2), 16) / 255) * 1000) / 1000);
+  const fmt = (v) => (Math.round(v * 100) / 100).toString();
+
+  async function buildAnnotatedPdf() {
+    const { PDFDocument, PDFName, PDFHexString, PDFString, PDFArray } = PDFLib;
+    const doc = await PDFDocument.load(origBytes.slice(), { ignoreEncryption: true, updateMetadata: false });
+    const ctx = doc.context, pdfPages = doc.getPages();
+    const gsRef = ctx.register(ctx.obj({ Type: "ExtGState", BM: "Multiply", ca: 1, CA: 1 }));
+    for (const h of hls) {
+      const page = pdfPages[h.page - 1]; if (!page || !h.rects?.length) continue;
+      const vp = (await pdf.getPage(h.page)).getViewport({ scale: 1 });
+      const quads = [], xs = [], ys = [];
+      let path = "";
+      for (const r of h.rects) {
+        const pt = (fx, fy) => { const q = vp.convertToPdfPoint(fx * vp.width, fy * vp.height); xs.push(q[0]); ys.push(q[1]); return q; };
+        const tl = pt(r.x, r.y), tr = pt(r.x + r.w, r.y), bl = pt(r.x, r.y + r.h), br = pt(r.x + r.w, r.y + r.h);
+        quads.push(...tl, ...tr, ...bl, ...br);
+        path += `${fmt(tl[0])} ${fmt(tl[1])} m ${fmt(tr[0])} ${fmt(tr[1])} l ${fmt(br[0])} ${fmt(br[1])} l ${fmt(bl[0])} ${fmt(bl[1])} l h f\n`;
+      }
+      const rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+      const [cr, cg, cb] = hexRgb(colorOf(h.color));
+      // Appearance stream so every viewer draws the highlight the same way (multiplied, text stays readable).
+      const ap = ctx.register(ctx.stream(`/GS0 gs ${cr} ${cg} ${cb} rg\n${path}`, {
+        Type: "XObject", Subtype: "Form", BBox: rect, Resources: { ExtGState: { GS0: gsRef } },
+      }));
+      const annot = ctx.obj({
+        Type: "Annot", Subtype: "Highlight", Rect: rect, QuadPoints: quads, C: [cr, cg, cb], F: 4,
+        AP: { N: ap }, P: page.ref,
+        T: PDFHexString.fromText("Margin Reader"),
+        M: PDFString.fromDate(new Date(h.created || Date.now())),
+        NM: PDFHexString.fromText(h.id),
+      });
+      if (h.comment) annot.set(PDFName.of("Contents"), PDFHexString.fromText(h.comment));
+      const aref = ctx.register(annot);
+      const existing = page.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+      if (existing) existing.push(aref); else page.node.set(PDFName.of("Annots"), ctx.obj([aref]));
+    }
+    return doc.save();
+  }
+
+  $("savePdf").onclick = async () => {
+    if (!pdf || !origBytes) return;
+    const btn = $("savePdf");
+    if (!window.PDFLib) { toast("The PDF writer didn't load. Reload the page and try again.", true); return; }
+    const downloads = await downloadsP;
+    if (!downloads) { toast("Saving files isn't available in this view. Open the page in Claude to save.", true); return; }
+    btn.disabled = true; btn.textContent = "Preparing…";
+    let bytes;
+    try { bytes = await buildAnnotatedPdf(); }
+    catch (e) {
+      toast("Couldn't write the highlights into this PDF. It may be encrypted or use a structure the writer can't edit.", true);
+      btn.disabled = false; btn.textContent = "Save PDF"; return;
+    }
+    const base = origName.replace(/\.pdf$/i, "");
+    try {
+      const res = await downloads.save({ filename: hls.length ? `${base} (highlighted).pdf` : `${base}.pdf`, data: new Blob([bytes], { type: "application/pdf" }) });
+      const where = res && res.path ? ` to ${res.path}` : "";
+      toast(hls.length ? `Saved with ${hls.length} highlight${hls.length === 1 ? "" : "s"}${where}.` : `Saved${where}.`);
+    } catch (e) {
+      const m = { declined: "", rate_limited: "A save is already waiting for your confirmation." }[e?.code];
+      if (m !== "") toast(m || "The file couldn't be saved here.", true);
+    } finally { btn.disabled = false; btn.textContent = "Save PDF"; }
+  };
+
+  // Local mode (Claude Code plugin): the server names the PDF to open on load.
+  if (window.MARGIN_LOCAL && window.MARGIN_LOCAL.pdfUrl) {
+    fetch(window.MARGIN_LOCAL.pdfUrl).then((r) => (r.ok ? r.blob() : Promise.reject())).then((b) => loadFile(new File([b], window.MARGIN_LOCAL.name || "document.pdf", { type: "application/pdf" }))).catch(() => addNote("Couldn't load the PDF from the local server.", true));
+  }
+  function addNote(t, err) {
+    const n = document.createElement("div"); n.className = "note" + (err ? " err" : ""); n.textContent = t; thread.appendChild(n); scrollThread();
+  }
+})();
+</script>

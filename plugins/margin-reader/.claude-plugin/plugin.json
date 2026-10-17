@@ -1,0 +1,7 @@
+{
+  "name": "margin-reader",
+  "version": "0.1.0",
+  "description": "Read PDFs with Claude in a side panel: explain selections or pages, highlight, comment, and save an annotated copy.",
+  "author": { "name": "Cheng Wang" },
+  "license": "MIT"
+}

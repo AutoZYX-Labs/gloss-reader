@@ -1,0 +1,17 @@
+{
+  "name": "margin-reader",
+  "owner": {
+    "name": "Cheng Wang"
+  },
+  "metadata": {
+    "description": "Margin Reader: a PDF reader with Claude in the side panel.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "margin-reader",
+      "source": "./plugins/margin-reader",
+      "description": "Read PDFs with Claude in a side panel: explain selections or pages, highlight, comment, and save an annotated copy."
+    }
+  ]
+}
