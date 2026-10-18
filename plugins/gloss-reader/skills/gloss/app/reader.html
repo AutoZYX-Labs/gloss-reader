@@ -9,7 +9,7 @@
   --accent:#2b49c9; --accent-fg:#ffffff; --hl:#ffd84d; --hl-soft:rgba(255,216,77,.42); --hl-ink:#2e2600;
   --danger:#b3261e; --shadow:0 1px 2px rgba(20,30,50,.08),0 4px 18px rgba(20,30,50,.10);
   --f-ui:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-read:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --f-read:"Source Serif 4",Georgia,"Times New Roman","Songti SC","Noto Serif CJK SC","SimSun",serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
@@ -64,6 +64,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .selbar button{border:0;background:transparent;color:var(--bg);padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:500}
 .selbar button:hover{background:rgba(127,127,127,.28)}
 .selbar button.hl{background:var(--hl);color:var(--hl-ink)}
+.selbar .askform{display:flex;gap:4px;align-items:center}
+.selbar .askform input{width:min(320px,60vw);border:0;border-radius:6px;padding:6px 9px;background:var(--bg);color:var(--fg);font:inherit}
+.selbar.asking>:not(.askform){display:none!important}
+.selbar:not(.asking) .askform{display:none}
 .selbar .sep,.hlpop .sep{width:1px;background:rgba(127,127,127,.4);margin:4px 2px}
 .selbar button.sw,.hlpop button.sw{width:28px;padding:0;display:grid;place-items:center}
 .sw i{display:block;width:16px;height:16px;border-radius:50%;background:var(--c);box-shadow:inset 0 0 0 1.5px rgba(0,0,0,.18)}
@@ -199,9 +203,14 @@ button,input,select,textarea{font:inherit;color:inherit}
       </div>
       <div class="pages" id="pages" hidden></div>
       <div class="selbar" id="selbar" hidden>
-        <button class="hl" id="selExplain">Explain</button>
-        <button id="selSimplify">Simpler</button>
-        <button id="selAsk">Ask about this</button>
+        <button class="hl" id="selExplain" title="Explain what this passage means and the role it plays in the argument">Explain</button>
+        <button id="selSimplify" title="Rewrite this passage in plain words, sentence by sentence, so you can read it straight through">Rephrase</button>
+        <button id="selTranslate" title="Translate this passage into Simplified Chinese (中文)">Translate</button>
+        <button id="selAsk" title="Type your own question about this passage">Ask…</button>
+        <form class="askform" id="selAskForm" autocomplete="off">
+          <input id="selAskInput" type="text" placeholder="Ask about the selected text…" aria-label="Question about the selected text">
+          <button type="submit" class="hl">Ask</button>
+        </form>
         <button id="selComment">Comment</button>
         <span class="sep" aria-hidden="true"></span>
         <span id="selSwatches" style="display:contents"></span>
@@ -222,6 +231,7 @@ button,input,select,textarea{font:inherit;color:inherit}
         <span class="sep" aria-hidden="true"></span>
         <button id="popComment">Comment</button>
         <button id="popExplain">Explain</button>
+        <button id="popTranslate" title="Translate into Simplified Chinese">Translate</button>
         <button id="popRemove">Remove</button>
       </div>
     </section>
@@ -492,7 +502,7 @@ button,input,select,textarea{font:inherit;color:inherit}
   document.addEventListener("selectionchange", () => {
     const s = readSelection();
     if (s) { selection = s; showCtx(); }
-    if (!s) selbar.hidden = true;
+    if (!s && !selbar.classList.contains("asking")) selbar.hidden = true;
     updateButtons();
   });
   viewer.addEventListener("pointerup", (e) => { if (selbar.contains(e.target)) return; setTimeout(() => { const s = readSelection(); if (s) { selection = s; showSelbar(s.rect); } }, 0); });
@@ -500,7 +510,7 @@ button,input,select,textarea{font:inherit;color:inherit}
     selbar.hidden = false; selbar._rect = rect; positionSelbar();
   }
   function positionSelbar() {
-    if (selbar.hidden) return;
+    if (selbar.hidden || selbar.classList.contains("asking")) return;
     const s = readSelection(); if (!s) { selbar.hidden = true; return; }
     const vr = viewer.getBoundingClientRect(), r = s.rect;
     let top = r.bottom - vr.top + viewer.scrollTop + 8;
@@ -513,12 +523,29 @@ button,input,select,textarea{font:inherit;color:inherit}
     $("ctx").hidden = false;
     $("ctxText").textContent = `Selection on p.${selection.page}: “${selection.text.slice(0, 90)}${selection.text.length > 90 ? "…" : ""}”`;
   }
-  function clearSelection() { selection = null; $("ctx").hidden = true; selbar.hidden = true; updateButtons(); }
+  function clearSelection() { selection = null; $("ctx").hidden = true; closeSelAsk(); selbar.hidden = true; updateButtons(); }
   $("ctxClear").onclick = () => { window.getSelection()?.removeAllRanges(); clearSelection(); };
-  selbar.addEventListener("pointerdown", (e) => e.preventDefault()); // keep selection alive
+  selbar.addEventListener("pointerdown", (e) => { if (e.target.tagName !== "INPUT") e.preventDefault(); }); // keep selection alive
   $("selExplain").onclick = () => explainSelection("explain");
   $("selSimplify").onclick = () => explainSelection("simplify");
-  $("selAsk").onclick = () => { selbar.hidden = true; showTab("chat"); $("ask").focus(); };
+  $("selTranslate").onclick = () => explainSelection("translate");
+  // "Ask…" turns the toolbar into a question box anchored to the selected text.
+  function closeSelAsk() { selbar.classList.remove("asking"); $("selAskInput").value = ""; }
+  $("selAsk").onclick = () => {
+    if (!selection) return;
+    selbar.classList.add("asking");
+    const vr = viewer.getBoundingClientRect();
+    const maxLeft = viewer.clientWidth - selbar.offsetWidth - 8 + viewer.scrollLeft;
+    if (parseFloat(selbar.style.left) > maxLeft) selbar.style.left = Math.max(8, maxLeft) + "px";
+    $("selAskInput").focus();
+  };
+  $("selAskForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = $("selAskInput").value.trim(); if (!q || !selection) return;
+    closeSelAsk(); selbar.hidden = true; showTab("chat");
+    sendAsk(q);
+  });
+  $("selAskInput").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeSelAsk(); selbar.hidden = true; } });
   const swatch = (col, pressed) => `<button class="sw" data-c="${col.key}" style="--c:${col.c}" aria-label="Highlight ${col.name.toLowerCase()}" title="Highlight ${col.name.toLowerCase()}"${pressed != null ? ` aria-pressed="${pressed}"` : ""}><i></i></button>`;
   $("selSwatches").innerHTML = COLORS.map((c) => swatch(c)).join("");
   $("selSwatches").addEventListener("click", (e) => { const b = e.target.closest(".sw"); if (b) addHighlight(b.dataset.c); });
@@ -635,6 +662,10 @@ button,input,select,textarea{font:inherit;color:inherit}
     const h = hls.find((x) => x.id === activeHl); if (!h) return;
     hls = hls.filter((x) => x.id !== h.id); activeHl = null; hlpop.hidden = true; drawHl(h.page); store.del(h.id); renderHlList();
   };
+  $("popTranslate").onclick = () => {
+    const h = hls.find((x) => x.id === activeHl); if (!h) return;
+    closePop(); selection = { text: h.text, page: h.page }; showTab("chat"); explainSelection("translate");
+  };
   $("popExplain").onclick = () => {
     const h = hls.find((x) => x.id === activeHl); if (!h) return;
     closePop(); selection = { text: h.text, page: h.page, note: h.comment || "" }; showTab("chat"); explainSelection("explain");
@@ -739,7 +770,7 @@ button,input,select,textarea{font:inherit;color:inherit}
     $("explainPage").disabled = !(ok && pdf);
     $("explainSel").disabled = !(ok && pdf && selection);
     $("send").disabled = !(ok && pdf);
-    ["selExplain","selSimplify","selAsk"].forEach((id) => $(id).disabled = !ok);
+    ["selExplain","selSimplify","selTranslate","selAsk"].forEach((id) => $(id).disabled = !ok);
     $("hlAskAll").disabled = !(ok && shownHls().length);
   }
 
@@ -749,7 +780,7 @@ button,input,select,textarea{font:inherit;color:inherit}
       : "Audience: a researcher in or near this field. Be precise and concise. Focus on the argument, the assumptions it rests on, and how this part connects to the rest of the work.";
     return `You are a reading companion built into a PDF reader. The reader is working through a document titled “${docTitle}”.
 ${lv}
-Format: short paragraphs or short bullet lists in Markdown. Start with a one-sentence answer in bold labelled "In short:". Write math in plain text or Unicode symbols (Δe, ≤, α), never LaTeX. Keep it under about 250 words unless the reader asks for more. If the text seems ambiguous, inconsistent, or possibly wrong, say so plainly. Text extracted from PDFs can have broken hyphenation or odd spacing; read through it.`;
+Format: short paragraphs or short bullet lists in Markdown. Unless the request asks for a different format, start with a one-sentence answer in bold labelled "In short:". Write math in plain text or Unicode symbols (Δe, ≤, α), never LaTeX. Keep it under about 250 words unless the reader asks for more. If the text seems ambiguous, inconsistent, or possibly wrong, say so plainly. Text extracted from PDFs can have broken hyphenation or odd spacing; read through it.`;
   }
   async function docContext() {
     const n = Math.min(2, pdf.numPages); let t = "";
@@ -762,12 +793,15 @@ Format: short paragraphs or short bullet lists in Markdown. Start with a one-sen
     if (!selection || !sample || busy) return;
     const s = selection; selbar.hidden = true;
     const ptxt = await pageText(s.page);
-    const ask = kind === "simplify"
-      ? "Rewrite this passage in the simplest plain language you can, sentence by sentence, keeping the meaning exact. Then add one line on why it matters here."
+    const ask = kind === "translate"
+      ? "Translate this passage into Simplified Chinese (简体中文). Make it an accurate academic translation that reads naturally in Chinese. The first time a technical term appears, give the Chinese term followed by the original English in brackets, for example 因果发现（causal discovery）. Keep symbols, variable names, equations, citations and numbers exactly as they are. Give only the translation, with no introduction, no bold \"In short\" line and no notes after it."
+      : kind === "simplify"
+      ? "Rephrase this passage in plain, everyday words so it can be read straight through. Keep the original order and keep the meaning exact, sentence by sentence. Replace jargon with plain words, or add a short definition in brackets where a technical term must stay. Give only the rephrased passage, with no introduction, no bold \"In short\" line and no commentary after it."
       : "Explain this passage. Say what it means, unpack each key sentence or term in order, and say what role it plays in the surrounding argument.";
     const full = `${ask}\n\nPassage (page ${s.page}):\n"""\n${clip(s.text, 6000)}\n"""${s.note ? `\n\nThe reader wrote this comment on the passage; take it into account: "${clip(s.note, 1500)}"` : ""}\n\nFull text of page ${s.page}, for context:\n"""\n${clip(ptxt, 7000)}\n"""`;
-    const compact = `${kind === "simplify" ? "Simplify" : "Explain"} this passage from page ${s.page}: "${clip(s.text, 600)}"`;
-    addUser({ quote: s.text, page: s.page, label: kind === "simplify" ? "Simplify" : "Explain" });
+    const verb = { simplify: "Rephrase", translate: "Translate into Chinese", explain: "Explain" }[kind] || "Explain";
+    const compact = `${verb} this passage from page ${s.page}: "${clip(s.text, 600)}"`;
+    addUser({ quote: s.text, page: s.page, label: { simplify: "Rephrase", translate: "Translate · 中文", explain: "Explain" }[kind] || "Explain" });
     await run(full, compact);
   }
 
@@ -787,9 +821,9 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
     await run(full, `Explain page ${n}.`, img ? [img] : null);
   }
 
-  async function sendAsk() {
-    const q = $("ask").value.trim(); if (!q || !sample || busy || !pdf) return;
-    $("ask").value = ""; autoGrow();
+  async function sendAsk(fromToolbar) {
+    const q = (typeof fromToolbar === "string" ? fromToolbar : $("ask").value).trim(); if (!q || !sample || busy || !pdf) return;
+    if (typeof fromToolbar !== "string") { $("ask").value = ""; autoGrow(); }
     const n = selection ? selection.page : current; const ptxt = await pageText(n);
     let full = q + "\n\n";
     if (selection) full += `The reader has selected this passage on page ${n}:\n"""\n${clip(selection.text, 5000)}\n"""\n\n`;
@@ -797,7 +831,7 @@ ${clip(ptxt || "(no extractable text on this page; it may be a scanned image or 
     addUser({ text: q, page: n, quote: selection?.text });
     await run(full, selection ? `${q} (about this passage on p.${n}: "${clip(selection.text, 400)}")` : `${q} (on p.${n})`);
   }
-  $("send").onclick = sendAsk;
+  $("send").onclick = () => sendAsk();
   $("ask").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsk(); } });
   const autoGrow = () => { const t = $("ask"); t.style.height = "auto"; t.style.height = Math.min(140, t.scrollHeight) + "px"; };
   $("ask").addEventListener("input", autoGrow);

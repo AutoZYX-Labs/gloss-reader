@@ -1,0 +1,231 @@
+From df946696b0e6373459d442e016633cda69b25f75 Mon Sep 17 00:00:00 2001
+From: Cheng Wang <cheng.wang@hw.ac.uk>
+Date: Sat, 17 Oct 2026 13:03:05 +0100
+Subject: [PATCH] Let /gloss open an empty reader and pick the PDF in the
+ browser
+
+- PDF argument is optional; annotations then go to ~/.gloss-reader/annotations.json
+- Save PDF uses a browser download when the file was opened in the browser
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017W17acTezG7Tit8VVLsCdB
+---
+ README.md                                     |  9 +++--
+ plugins/gloss-reader/skills/gloss/SKILL.md    | 18 ++++++---
+ .../skills/gloss/app/local-shim.js            |  8 ++++
+ plugins/gloss-reader/skills/gloss/server.mjs  | 39 ++++++++++---------
+ 4 files changed, 46 insertions(+), 28 deletions(-)
+
+diff --git a/README.md b/README.md
+index ac9fdd1..2afa0eb 100644
+--- a/README.md
++++ b/README.md
+@@ -28,7 +28,7 @@ You need Node.js 18 or newer.
+ /plugin install gloss-reader@gloss-reader
+ ```
+ 
+-Then run `/gloss-reader:gloss thesis.pdf` (or just `/gloss thesis.pdf`), or ask "open thesis.pdf in Gloss Reader".
++Then type `/gloss`. The reader opens in your browser, where you drop or choose a PDF. To open a specific file straight away, use `/gloss thesis.pdf` (the full name is `/gloss-reader:gloss`).
+ 
+ **Codex** (skill): copy the skill folder into your Codex skills directory:
+ 
+@@ -38,13 +38,14 @@ mkdir -p ~/.agents/skills
+ cp -r gloss-reader/plugins/gloss-reader/skills/gloss ~/.agents/skills/
+ ```
+ 
+-Then type `$gloss thesis.pdf` in Codex, or ask it to open the PDF in Gloss Reader. Codex's sandbox may ask you to approve starting the local server.
++Then type `$gloss` (or `$gloss thesis.pdf`) in Codex. Codex's sandbox may ask you to approve starting the local server.
+ 
+ **Other agents with Agent Skills support** (Gemini CLI, Cursor and others): use the [skills CLI](https://skills.sh) (`npx skills add <github-user>/gloss-reader`), or copy `plugins/gloss-reader/skills/gloss` into that agent's skills folder.
+ 
+ **Without an agent driving it**, from any terminal:
+ 
+ ```bash
++node plugins/gloss-reader/skills/gloss/server.mjs                 # empty reader, pick a PDF in the browser
+ node plugins/gloss-reader/skills/gloss/server.mjs thesis.pdf --agent codex
+ ```
+ 
+@@ -62,8 +63,8 @@ node plugins/gloss-reader/skills/gloss/server.mjs thesis.pdf --agent codex
+ 
+ | What | Where |
+ |---|---|
+-| Highlights and comments | `thesis.pdf.gloss.json`, next to the PDF. It's plain JSON, so you can keep it with the PDF or commit it. |
+-| Annotated copy | `thesis (highlighted).pdf`, next to the PDF. Your original is never changed. |
++| Highlights and comments | Started with a file: `thesis.pdf.gloss.json`, next to the PDF. Opened in the browser: `~/.gloss-reader/annotations.json`. Both are plain JSON, matched to each PDF by its fingerprint, so reopening the same PDF brings them back. |
++| Annotated copy | Started with a file: `thesis (highlighted).pdf`, next to the PDF. Opened in the browser: a normal browser download. Your original is never changed. |
+ 
+ ## Privacy
+ 
+diff --git a/plugins/gloss-reader/skills/gloss/SKILL.md b/plugins/gloss-reader/skills/gloss/SKILL.md
+index d761a40..67f13c8 100644
+--- a/plugins/gloss-reader/skills/gloss/SKILL.md
++++ b/plugins/gloss-reader/skills/gloss/SKILL.md
+@@ -1,7 +1,7 @@
+ ---
+ name: gloss
+ description: Open a PDF (paper, thesis, dissertation, report) in Gloss Reader, a local browser reader with an AI side panel that explains selected text or the current page, with colour highlights, comments, and saving an annotated copy. Use when the user wants to read, study, annotate, or have a PDF explained side by side.
+-argument-hint: <path/to/file.pdf> [--model NAME]
++argument-hint: "[path/to/file.pdf] [--model NAME]"
+ allowed-tools: Bash(node "${CLAUDE_SKILL_DIR}/server.mjs" *), Bash(node ${CLAUDE_SKILL_DIR}/server.mjs *), Glob
+ ---
+ 
+@@ -19,7 +19,7 @@ The server script is `server.mjs` in the same folder as this SKILL.md. In Claude
+ 
+ ## Steps
+ 
+-1. **Find the PDF.** Use the path the user gave. Otherwise look for PDFs in the current directory (shallow first). If there is exactly one, use it; if there are several, ask which one; if none, ask for a path.
++1. **Which PDF, if any.** If the user named a PDF, use its absolute path. If they didn't (for example they just typed `/gloss`), don't search for one: start the reader without a file, and they will open a PDF in the browser page.
+ 
+ 2. **Start the reader.** Run this command in the foreground, without `nohup`, `&` or any other wrapper. It starts the server in the background itself, prints the link and returns within a few seconds:
+ 
+@@ -27,14 +27,20 @@ The server script is `server.mjs` in the same folder as this SKILL.md. In Claude
+    node "<skill folder>/server.mjs" "<absolute path to the pdf>" --detach --agent <you>
+    ```
+ 
++   Without a PDF, leave the path out:
++
++   ```bash
++   node "<skill folder>/server.mjs" --detach --agent <you>
++   ```
++
+    Set `--agent` to the agent you are: `claude` if you are Claude Code, `codex` if you are Codex, `gemini` if you are Gemini CLI. Add `--model <name>` only if the user asked for a specific model, and `--no-open` if they don't want the browser opened automatically. If your sandbox blocks network ports or background processes, ask the user to approve the command or to run it in their own terminal.
+ 
+ 3. **Report the link.** The output has a `URL:` line that includes an access token. Tell the user in two or three short lines:
+-   - the URL (the browser should already have opened it),
+-   - that highlights and comments are saved next to the PDF as `<file>.pdf.gloss.json`,
+-   - that **Save PDF** writes `<file> (highlighted).pdf` next to the original (it never overwrites: an existing name gets a number added).
++   - the URL (the browser should already have opened it); if no PDF was given, that they can drop or choose a PDF on the page,
++   - where highlights and comments are saved: next to the PDF as `<file>.pdf.gloss.json`, or in `~/.gloss-reader/annotations.json` when the PDF was opened in the browser,
++   - that **Save PDF** writes `<file> (highlighted).pdf` next to the original (never overwriting), or downloads it through the browser when the PDF was opened in the browser.
+ 
+-4. **Stopping.** The reader stops by itself after 4 hours without use. To stop it sooner, run the same command with `--stop` in place of `--detach`. Running `--detach` again for the same PDF replaces the old server.
++4. **Stopping.** The reader stops by itself after 4 hours without use. To stop it sooner, run the same command with `--stop` in place of `--detach`. Running `--detach` again for the same PDF (or again with no PDF) replaces the old server.
+ 
+ ## What the reader does
+ 
+diff --git a/plugins/gloss-reader/skills/gloss/app/local-shim.js b/plugins/gloss-reader/skills/gloss/app/local-shim.js
+index 6850bb0..7993c14 100644
+--- a/plugins/gloss-reader/skills/gloss/app/local-shim.js
++++ b/plugins/gloss-reader/skills/gloss/app/local-shim.js
+@@ -94,6 +94,14 @@
+   const downloads = {
+     save: async ({ filename, data }) => {
+       const body = data instanceof Blob ? data : new Blob([data]);
++      if (!cfg.pdfUrl) {
++        // The PDF was picked in the browser, so there is no folder to write next to: use a normal download.
++        const url = URL.createObjectURL(body);
++        const a = document.createElement("a");
++        a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
++        setTimeout(() => URL.revokeObjectURL(url), 30000);
++        return { status: "saved" };
++      }
+       const r = await api("/api/save?name=" + encodeURIComponent(filename), { method: "POST", body });
+       if (!r.ok) throw { code: "unavailable", message: "HTTP " + r.status };
+       const j = await r.json();
+diff --git a/plugins/gloss-reader/skills/gloss/server.mjs b/plugins/gloss-reader/skills/gloss/server.mjs
+index 23a9a5b..09fa6ed 100644
+--- a/plugins/gloss-reader/skills/gloss/server.mjs
++++ b/plugins/gloss-reader/skills/gloss/server.mjs
+@@ -2,8 +2,9 @@
+ // Gloss Reader local server. Serves the reader for one PDF on 127.0.0.1 and answers questions
+ // through a coding agent's own CLI (Claude Code, Codex or Gemini CLI). No dependencies.
+ //
+-//   node server.mjs <file.pdf> --detach [--agent claude|codex|gemini] [--model NAME] [--no-open]
+-//   node server.mjs <file.pdf> --stop
++//   node server.mjs [file.pdf] --detach [--agent claude|codex|gemini] [--model NAME] [--no-open]
++//   node server.mjs [file.pdf] --stop
++// Without a file, the reader opens empty and the user picks a PDF in the browser.
+ 
+ import http from "node:http";
+ import fs from "node:fs";
+@@ -22,23 +23,21 @@ const flag = (name, def) => { const i = args.indexOf(name); return i >= 0 && arg
+ const has = (name) => args.includes(name);
+ const pdfArg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.includes(args[i - 1]));
+ 
+-if (!pdfArg) {
+-  console.error("Usage: node server.mjs <file.pdf> [--detach|--stop] [--agent claude|codex|gemini] [--model NAME] [--port N] [--no-open]");
+-  process.exit(2);
+-}
+-const PDF = path.resolve(pdfArg);
+-const NAME = path.basename(PDF);
+-const RUN_ID = crypto.createHash("sha1").update(PDF).digest("hex").slice(0, 12);
++// With no PDF the reader opens empty and the user picks a file in the browser.
++const PDF = pdfArg ? path.resolve(pdfArg) : null;
++const NAME = PDF ? path.basename(PDF) : null;
++const LABEL = NAME || "the reader";
++const RUN_ID = crypto.createHash("sha1").update(PDF || "(no file)").digest("hex").slice(0, 12);
+ const LOG = path.join(os.tmpdir(), `gloss-reader-${RUN_ID}.log`);
+ const PIDFILE = path.join(os.tmpdir(), `gloss-reader-${RUN_ID}.pid`);
+ 
+ // ---- --stop ----
+ if (has("--stop")) {
+-  try { process.kill(Number(fs.readFileSync(PIDFILE, "utf8")), "SIGTERM"); fs.rmSync(PIDFILE, { force: true }); console.log(`Stopped Gloss Reader for ${NAME}.`); }
+-  catch { console.log(`No running Gloss Reader found for ${NAME}.`); }
++  try { process.kill(Number(fs.readFileSync(PIDFILE, "utf8")), "SIGTERM"); fs.rmSync(PIDFILE, { force: true }); console.log(`Stopped Gloss Reader for ${LABEL}.`); }
++  catch { console.log(`No running Gloss Reader found for ${LABEL}.`); }
+   process.exit(0);
+ }
+-if (!fs.existsSync(PDF) || !fs.statSync(PDF).isFile()) { console.error(`Not found: ${PDF}`); process.exit(2); }
++if (PDF && (!fs.existsSync(PDF) || !fs.statSync(PDF).isFile())) { console.error(`Not found: ${PDF}`); process.exit(2); }
+ 
+ // ---- Agents ----
+ const AGENTS = {
+@@ -77,7 +76,7 @@ if (has("--detach")) {
+     const ready = out.includes("URL:");
+     if (ready || /error|not found/i.test(out) || Date.now() - t0 > 15000) {
+       console.log(out.trim());
+-      if (ready) console.log(`Running in the background (stops after ${Number(flag("--idle-hours", "4"))} h idle). Stop it with: node "${SELF}" "${PDF}" --stop`);
++      if (ready) console.log(`Running in the background (stops after ${Number(flag("--idle-hours", "4"))} h idle). Stop it with: node "${SELF}"${PDF ? ` "${PDF}"` : ""} --stop`);
+       process.exit(ready ? 0 : 1);
+     }
+     setTimeout(poll, 150);
+@@ -93,13 +92,17 @@ function startServer() {
+   const MODEL = flag("--model", process.env.GLOSS_MODEL || "");
+   const PORT = Number(flag("--port", "0"));
+   const IDLE_MS = Number(flag("--idle-hours", "4")) * 3600e3;
+-  const SIDECAR = PDF + ".gloss.json";
++  // Annotations: next to the PDF when one is given, otherwise in one store in the home folder (keyed by PDF fingerprint).
++  const HOME_STORE = path.join(os.homedir(), ".gloss-reader");
++  const SIDECAR = PDF ? PDF + ".gloss.json" : path.join(HOME_STORE, "annotations.json");
++  if (!PDF) fs.mkdirSync(HOME_STORE, { recursive: true });
++  const SAVE_DIR = PDF ? path.dirname(PDF) : [path.join(os.homedir(), "Downloads"), os.homedir()].find((d) => fs.existsSync(d));
+   const TOKEN = crypto.randomBytes(18).toString("base64url");
+ 
+   const page = () => {
+     const reader = fs.readFileSync(path.join(HERE, "app", "reader.html"), "utf8");
+     const shim = fs.readFileSync(path.join(HERE, "app", "local-shim.js"), "utf8");
+-    const cfg = JSON.stringify({ token: TOKEN, name: NAME, pdfUrl: "/doc.pdf?t=" + TOKEN, agentName: AGENTS[AGENT].label }).replace(/</g, "\\u003c");
++    const cfg = JSON.stringify({ token: TOKEN, name: NAME, pdfUrl: PDF ? "/doc.pdf?t=" + TOKEN : null, agentName: AGENTS[AGENT].label }).replace(/</g, "\\u003c");
+     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+ <style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+ <script>window.GLOSS_LOCAL=${cfg};</script><script>${shim}</script></head><body>
+@@ -245,7 +248,7 @@ ${reader}
+       }
+       if (!authed) return send(res, 403, "forbidden");
+ 
+-      if (req.method === "GET" && url.pathname === "/doc.pdf") {
++      if (req.method === "GET" && url.pathname === "/doc.pdf" && PDF) {
+         res.writeHead(200, { "Content-Type": "application/pdf", "Cache-Control": "no-store" });
+         return fs.createReadStream(PDF).pipe(res);
+       }
+@@ -261,7 +264,7 @@ ${reader}
+       }
+       if (req.method === "POST" && url.pathname === "/api/save") {
+         const want = path.basename(url.searchParams.get("name") || "highlighted.pdf").replace(/[\\/:*?"<>|\x00-\x1f]/g, "_");
+-        const out = freeName(path.dirname(PDF), want.toLowerCase().endsWith(".pdf") ? want : want + ".pdf");
++        const out = freeName(SAVE_DIR, want.toLowerCase().endsWith(".pdf") ? want : want + ".pdf");
+         await fsp.writeFile(out, await readBody(req, 500e6));
+         return send(res, 200, JSON.stringify({ path: out }), "application/json");
+       }
+@@ -276,7 +279,7 @@ ${reader}
+   server.on("error", (e) => { console.error("Error: " + e.message); process.exit(1); });
+   server.listen(PORT, "127.0.0.1", () => {
+     const link = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
+-    console.log(`Gloss Reader is open for ${NAME} (answers by ${AGENTS[AGENT].label})`);
++    console.log(NAME ? `Gloss Reader is open for ${NAME} (answers by ${AGENTS[AGENT].label})` : `Gloss Reader is open (answers by ${AGENTS[AGENT].label}). Open a PDF in the browser page.`);
+     console.log(`URL: ${link}`);
+     console.log(`Highlights and comments are saved to ${SIDECAR}`);
+     if (!has("--no-open")) {
+-- 
+2.43.0
+

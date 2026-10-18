@@ -44,7 +44,7 @@ The server script is `server.mjs` in the same folder as this SKILL.md. In Claude
 
 ## What the reader does
 
-- Select text, then choose **Explain**, **Simpler**, **Ask about this**, **Comment**, or a highlight colour.
+- Select text, then choose **Explain**, **Rephrase** (plain-words rewrite), **Translate** (into Simplified Chinese), **Ask…** (type a question about that passage), **Comment**, or a highlight colour.
 - **Explain page N** sends the page text and an image of the page (for figures and equations).
 - Highlights tab: filter by colour, jump to a highlight, **Summarize highlights**.
 - **Save PDF** embeds highlights and comments as standard PDF annotations that Acrobat, Preview and Zotero can read and edit.

@@ -2,7 +2,7 @@
 
 Read PDFs with an AI beside you. A *gloss* is an explanatory note written in the margin next to a hard passage, and that's what Gloss Reader does: it opens a PDF in your browser with the document on the left and your coding agent on the right.
 
-- **Explain**: select a sentence or paragraph and click **Explain** or **Simpler**. **Explain page N** also sends an image of the page, so figures, tables and equations get explained.
+- **Explain**: select a sentence or paragraph and click **Explain** (what it means and why it matters) or **Rephrase** (the same passage in plain words), **Translate** (into Simplified Chinese, keeping English terms in brackets), or **Ask…** to type your own question about it. **Explain page N** also sends an image of the page, so figures, tables and equations get explained.
 - **Ask**: type follow-up questions about the page or your selection. Switch between *Newcomer* and *Expert* explanations.
 - **Highlight**: mark text in yellow, green, blue or pink. Click a highlight to recolour it, explain it or remove it.
 - **Comment**: attach notes to passages. The AI takes your comments into account when it explains or summarizes them.
